@@ -1,17 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, MessageCircle } from 'lucide-react';
-import { Attachment, ChatSession, FilterOptions, Message } from './types/chat';
+import { Attachment, ChatSession, Message } from './types/chat';
 import {
   createChatSessionFromData,
   parseWhatsAppZip,
   revokeChatObjectUrls,
   revokeAllObjectUrls,
 } from './utils/zipHandler';
-import { generateDemoChat } from './utils/demoData';
 import { formatDateSeparator, normalizeDateToYMD } from './utils/dateUtils';
 import { ChatSidebar } from './components/ChatSidebar';
 import { ChatHeader } from './components/ChatHeader';
-import { SearchBar } from './components/SearchBar';
+import { SearchBar, SearchResultItem } from './components/SearchBar';
 import { MessageItem } from './components/MessageItem';
 import { MediaModal } from './components/MediaModal';
 import { ChatInfoDrawer } from './components/ChatInfoDrawer';
@@ -23,16 +22,18 @@ export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-  // In-chat search and filter state (applies to active session)
+  // In-chat search state
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+
+  // Modals and Drawers
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
-  const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-    searchQuery: '',
-    participant: '',
-    mediaType: 'all',
-  });
-  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+
+  // Temporary highlight state for contextual navigation
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const highlightTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Active media for Lightbox viewer
   const [activeMedia, setActiveMedia] = useState<{
@@ -40,6 +41,7 @@ export default function App() {
     caption?: string;
     sender?: string;
     dateStr?: string;
+    messageId?: string;
   } | null>(null);
 
   // Background loading state for multiple ZIP parsing
@@ -53,10 +55,37 @@ export default function App() {
 
   const fileInputMainRef = useRef<HTMLInputElement | null>(null);
 
+  // Audio coordination state for consecutive audio autoplay
+  const [activePlayingAudioId, setActivePlayingAudioId] = useState<string | null>(null);
+  const [audioPlaybackRate, setAudioPlaybackRate] = useState<number>(1);
+  const [isAudioChainActive, setIsAudioChainActive] = useState<boolean>(false);
+
   // Active session object
   const activeSession = useMemo(() => {
     return sessions.find((s) => s.id === activeSessionId) || null;
   }, [sessions, activeSessionId]);
+
+  // Stop playback and cancel autoplay chain whenever active session changes
+  useEffect(() => {
+    setActivePlayingAudioId(null);
+    setIsAudioChainActive(false);
+  }, [activeSessionId]);
+
+  const handlePlayAudio = (messageId: string) => {
+    setActivePlayingAudioId(messageId);
+    setIsAudioChainActive(true);
+  };
+
+  const handlePauseAudio = (messageId: string) => {
+    if (activePlayingAudioId === messageId) {
+      setActivePlayingAudioId(null);
+      setIsAudioChainActive(false); // Manual pause halts the chain
+    }
+  };
+
+  const handleChangeAudioRate = (newRate: number) => {
+    setAudioPlaybackRate(newRate);
+  };
 
   // Messages with adjusted outgoing perspective
   const adjustedMessages = useMemo(() => {
@@ -67,115 +96,164 @@ export default function App() {
     }));
   }, [activeSession]);
 
-  // Filter messages based on search & filter options
-  const filteredMessages = useMemo(() => {
-    return adjustedMessages.filter((m) => {
-      // Participant filter
-      if (filterOptions.participant && m.sender !== filterOptions.participant) {
-        return false;
-      }
+  // Consecutive audio autoplay handler (strictly chronological in real conversation)
+  const handleAudioEnded = (endedMessageId: string) => {
+    if (!isAudioChainActive) {
+      setActivePlayingAudioId(null);
+      return;
+    }
 
-      // Media type filter
-      if (filterOptions.mediaType !== 'all') {
-        if (!m.attachment) return false;
-        if (filterOptions.mediaType === 'audio' || filterOptions.mediaType === 'voice') {
-          if (m.attachment.mediaType !== 'audio' && m.attachment.mediaType !== 'voice') return false;
-        } else if (m.attachment.mediaType !== filterOptions.mediaType) {
-          return false;
-        }
-      }
+    const currentIndex = adjustedMessages.findIndex((m) => m.id === endedMessageId);
+    if (currentIndex === -1 || currentIndex >= adjustedMessages.length - 1) {
+      setActivePlayingAudioId(null);
+      setIsAudioChainActive(false);
+      return;
+    }
 
-      // Text query search
-      if (filterOptions.searchQuery.trim()) {
-        const query = filterOptions.searchQuery.toLowerCase().trim();
-        const textMatch = m.text.toLowerCase().includes(query);
-        const senderMatch = m.sender.toLowerCase().includes(query);
-        const fileMatch = m.attachment?.fileName.toLowerCase().includes(query);
-        if (!textMatch && !senderMatch && !fileMatch) {
-          return false;
-        }
-      }
+    const nextMsg = adjustedMessages[currentIndex + 1];
 
-      return true;
-    });
-  }, [adjustedMessages, filterOptions]);
+    // Check if next chronological message is another audio
+    const isNextAudio =
+      !nextMsg.isSystem &&
+      !nextMsg.isViewOnce &&
+      nextMsg.attachment &&
+      (nextMsg.attachment.mediaType === 'audio' || nextMsg.attachment.mediaType === 'voice');
 
-  // Matches list for search navigation
-  const searchMatches = useMemo(() => {
-    if (!filterOptions.searchQuery.trim()) return [];
-    return filteredMessages.map((m) => m.id);
-  }, [filteredMessages, filterOptions.searchQuery]);
+    if (isNextAudio) {
+      // Auto-advance to consecutive audio
+      setActivePlayingAudioId(nextMsg.id);
+      setIsAudioChainActive(true);
+    } else {
+      // Stop chain if next message is photo, video, text, sticker, doc, gif, or anything else
+      setActivePlayingAudioId(null);
+      setIsAudioChainActive(false);
+    }
+  };
+
+  // Matches list for search navigation (does NOT filter conversation stream)
+  const searchMatches = useMemo<SearchResultItem[]>(() => {
+    if (!searchQuery.trim()) return [];
+    const q = searchQuery.toLowerCase().trim();
+    return adjustedMessages
+      .filter((m) => {
+        const textMatch = m.text && m.text.toLowerCase().includes(q);
+        const fileMatch = m.attachment && m.attachment.fileName.toLowerCase().includes(q);
+        const senderMatch = m.sender && m.sender.toLowerCase().includes(q);
+        return textMatch || fileMatch || senderMatch;
+      })
+      .map((m) => ({
+        id: m.id,
+        sender: m.sender,
+        rawDate: m.rawDate,
+        rawTime: m.rawTime,
+        text: m.text,
+        fileName: m.attachment?.fileName,
+      }));
+  }, [adjustedMessages, searchQuery]);
 
   useEffect(() => {
     setCurrentMatchIndex(0);
-  }, [filterOptions.searchQuery]);
+  }, [searchQuery]);
 
-  // Reset in-chat search and filters when switching chats
+  // Reset in-chat search and modals when switching chats
   useEffect(() => {
     setIsSearchOpen(false);
+    setSearchQuery('');
     setIsDatePickerOpen(false);
     setIsInfoOpen(false);
-    setFilterOptions({
-      searchQuery: '',
-      participant: '',
-      mediaType: 'all',
-    });
   }, [activeSessionId]);
 
   // Save scroll position of current chat before switching, and restore scroll position of target chat
-  const handleSelectSession = useCallback((newId: string) => {
-    if (newId === activeSessionId) return;
+  const handleSelectSession = useCallback(
+    (newId: string) => {
+      if (newId === activeSessionId) return;
 
-    // 1. Save scroll position of outgoing chat
-    if (chatScrollContainerRef.current && activeSessionId) {
-      scrollPositions.current.set(
-        activeSessionId,
-        chatScrollContainerRef.current.scrollTop
-      );
-    }
-
-    // 2. Switch chat
-    setActiveSessionId(newId);
-
-    // 3. Restore scroll position of incoming chat
-    setTimeout(() => {
-      const container = chatScrollContainerRef.current;
-      if (container) {
-        const savedScroll = scrollPositions.current.get(newId);
-        if (savedScroll !== undefined) {
-          container.scrollTop = savedScroll;
-        } else {
-          // If first time opening, scroll to bottom
-          container.scrollTop = container.scrollHeight;
-        }
+      // 1. Save scroll position of outgoing chat
+      if (chatScrollContainerRef.current && activeSessionId) {
+        scrollPositions.current.set(
+          activeSessionId,
+          chatScrollContainerRef.current.scrollTop
+        );
       }
-    }, 40);
-  }, [activeSessionId]);
 
-  // Jump to specific message by ID and highlight it
-  const jumpToMessage = useCallback((messageId: string) => {
-    const el = document.getElementById(messageId);
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.classList.add('ring-4', 'ring-[#00a884]', 'rounded-lg', 'bg-[#00a884]/20');
+      // 2. Switch chat
+      setActiveSessionId(newId);
+
+      // 3. Restore scroll position of incoming chat
       setTimeout(() => {
-        el.classList.remove('ring-4', 'ring-[#00a884]', 'rounded-lg', 'bg-[#00a884]/20');
-      }, 2500);
-    }
-  }, []);
+        const container = chatScrollContainerRef.current;
+        if (container) {
+          const savedScroll = scrollPositions.current.get(newId);
+          if (savedScroll !== undefined) {
+            container.scrollTop = savedScroll;
+          } else {
+            container.scrollTop = container.scrollHeight;
+          }
+        }
+      }, 50);
+    },
+    [activeSessionId]
+  );
+
+  /**
+   * CENTRALIZED "IR AL MENSAJE" (goToMessage)
+   * Navigates seamlessly to any message in the full conversation:
+   * 1. Identifies chat and switches if needed
+   * 2. Closes any blocking modal/drawer (lightbox, chat info)
+   * 3. Locates message in DOM
+   * 4. Scrolls smoothly and centers it in view
+   * 5. Applies temporary visual highlight that auto-fades
+   * 6. Preserves full conversation context so user can continue scrolling freely
+   */
+  const goToMessage = useCallback(
+    (messageId: string, targetSessionId?: string) => {
+      // 1. Switch chat session if target differs
+      if (targetSessionId && targetSessionId !== activeSessionId) {
+        handleSelectSession(targetSessionId);
+      }
+
+      // 2. Close any overlays blocking the chat view
+      setActiveMedia(null);
+      setIsInfoOpen(false);
+
+      // 3. Set temporary visual highlight with auto-clear
+      setHighlightedMessageId(messageId);
+      if (highlightTimerRef.current) {
+        clearTimeout(highlightTimerRef.current);
+      }
+      highlightTimerRef.current = setTimeout(() => {
+        setHighlightedMessageId(null);
+      }, 3500);
+
+      // 4. Scroll smoothly to the message element
+      setTimeout(() => {
+        const el = document.getElementById(messageId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 80);
+    },
+    [activeSessionId, handleSelectSession]
+  );
 
   const handleNextMatch = () => {
     if (searchMatches.length === 0) return;
     const nextIdx = (currentMatchIndex + 1) % searchMatches.length;
     setCurrentMatchIndex(nextIdx);
-    jumpToMessage(searchMatches[nextIdx]);
+    goToMessage(searchMatches[nextIdx].id);
   };
 
   const handlePrevMatch = () => {
     if (searchMatches.length === 0) return;
     const prevIdx = (currentMatchIndex - 1 + searchMatches.length) % searchMatches.length;
     setCurrentMatchIndex(prevIdx);
-    jumpToMessage(searchMatches[prevIdx]);
+    goToMessage(searchMatches[prevIdx].id);
+  };
+
+  const handleSelectMatch = (messageId: string) => {
+    const idx = searchMatches.findIndex((m) => m.id === messageId);
+    if (idx !== -1) setCurrentMatchIndex(idx);
+    goToMessage(messageId);
   };
 
   // Scroll helpers
@@ -211,11 +289,11 @@ export default function App() {
       return;
     }
 
-    const targetMsg = filteredMessages.find(
+    const targetMsg = adjustedMessages.find(
       (m) => normalizeDateToYMD(m.rawDate) === targetYMD
     );
     if (targetMsg) {
-      jumpToMessage(targetMsg.id);
+      goToMessage(targetMsg.id);
     }
   };
 
@@ -239,99 +317,102 @@ export default function App() {
     const files = Array.from(fileList).filter(
       (f) => f.name.toLowerCase().endsWith('.zip') || f.type.includes('zip')
     );
+    if (files.length === 0) return;
 
-    if (files.length === 0) {
-      alert('Por favor selecciona archivos comprimidos .ZIP de WhatsApp.');
-      return;
-    }
+    setLoadingCount((prev) => prev + files.length);
 
-    setLoadingCount(files.length);
-    let firstNewSessionId: string | null = null;
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+    for (const file of files) {
       try {
         const result = await parseWhatsAppZip(file);
-        const sessionId = `chat-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-        const session = createChatSessionFromData(
-          sessionId,
-          result.metadata.title,
+        const newSession = createChatSessionFromData(
+          `chat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          file.name.replace(/\.zip$/i, ''),
           result.messages,
           result.metadata,
           result.objectUrls,
           file.name
         );
 
-        setSessions((prev) => [...prev, session]);
-        if (!firstNewSessionId) {
-          firstNewSessionId = sessionId;
-        }
-      } catch (err: any) {
-        console.error(`Error procesando ${file.name}:`, err);
-        alert(`Error al procesar ${file.name}: ${err.message || 'Archivo no válido'}`);
+        setSessions((prev) => {
+          const exists = prev.some((s) => s.id === newSession.id);
+          if (exists) return prev;
+          return [...prev, newSession];
+        });
+
+        // Set active session to the newly loaded chat
+        setActiveSessionId(newSession.id);
+
+        setTimeout(() => {
+          scrollToBottom(false);
+        }, 120);
+      } catch (err) {
+        console.error(`Error loading chat ZIP "${file.name}":`, err);
+      } finally {
+        setLoadingCount((prev) => Math.max(0, prev - 1));
       }
-      setLoadingCount((prev) => Math.max(0, prev - 1));
-    }
-
-    // Switch to first newly added chat
-    if (firstNewSessionId) {
-      handleSelectSession(firstNewSessionId);
     }
   };
 
-  // Load Demo Chat into sessions
-  const handleLoadDemo = () => {
-    const demo = generateDemoChat();
-    const demoId = `demo-${Date.now()}`;
-    const demoSession = createChatSessionFromData(
-      demoId,
-      demo.metadata.title,
-      demo.messages,
-      demo.metadata,
-      demo.objectUrls || [],
-      'chat_ejemplo_playa.zip'
-    );
-
-    setSessions((prev) => [...prev, demoSession]);
-    handleSelectSession(demoId);
-  };
-
-  // Rename a chat session
-  const handleRenameSession = (id: string, newTitle: string) => {
-    setSessions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, customTitle: newTitle } : s))
-    );
-  };
-
-  // Delete a chat from session (and revoke only its own Object URLs)
-  const handleDeleteSession = (id: string) => {
-    const sessionToDelete = sessions.find((s) => s.id === id);
+  // Close / Delete a chat session
+  const handleDeleteSession = (sessionId: string) => {
+    const sessionToDelete = sessions.find((s) => s.id === sessionId);
     if (sessionToDelete) {
       revokeChatObjectUrls(sessionToDelete.objectUrls);
     }
 
-    scrollPositions.current.delete(id);
+    const remaining = sessions.filter((s) => s.id !== sessionId);
+    setSessions(remaining);
+    scrollPositions.current.delete(sessionId);
 
-    setSessions((prev) => {
-      const updated = prev.filter((s) => s.id !== id);
-      // If we deleted the active chat, switch to another or null
-      if (activeSessionId === id) {
-        const nextActive = updated.length > 0 ? updated[0].id : null;
-        setActiveSessionId(nextActive);
-      }
-      return updated;
-    });
+    if (activeSessionId === sessionId) {
+      setActiveSessionId(remaining.length > 0 ? remaining[0].id : null);
+    }
   };
 
-  // Change "currentUser" perspective for active session
-  const handleChangeCurrentUser = (user: string) => {
-    if (!activeSession) return;
+  // Rename chat session
+  const handleRenameSession = (sessionId: string, newTitle: string) => {
     setSessions((prev) =>
-      prev.map((s) => (s.id === activeSession.id ? { ...s, currentUser: user } : s))
+      prev.map((s) => (s.id === sessionId ? { ...s, customTitle: newTitle } : s))
     );
   };
 
-  // Lightbox Next/Prev navigation
+  // Switch perspective / currentUser for current chat
+  const handleChangeCurrentUser = (user: string) => {
+    if (!activeSessionId) return;
+    setSessions((prev) =>
+      prev.map((s) => (s.id === activeSessionId ? { ...s, currentUser: user } : s))
+    );
+  };
+
+  // Load interactive demo chat
+  const handleLoadDemoChat = async () => {
+    try {
+      const { generateDemoChat } = await import('./utils/demoData');
+      const demo = generateDemoChat();
+      const demoSession = createChatSessionFromData(
+        'chat-demo-travel',
+        'Viaje a la Playa 🏖️🌴',
+        demo.messages,
+        demo.metadata,
+        demo.objectUrls,
+        'Chat_Demo_WhatsApp.zip'
+      );
+
+      setSessions((prev) => {
+        const filtered = prev.filter((s) => s.id !== demoSession.id);
+        return [demoSession, ...filtered];
+      });
+
+      setActiveSessionId(demoSession.id);
+      setTimeout(() => {
+        scrollToBottom(false);
+      }, 100);
+    } catch (err) {
+      console.error('Error loading demo chat:', err);
+    }
+  };
+
+  // Visual media messages for Lightbox carousel
   const visualMediaMessages = useMemo(() => {
     return adjustedMessages.filter(
       (m) =>
@@ -361,6 +442,7 @@ export default function App() {
           caption: nextMsg.text,
           sender: nextMsg.sender,
           dateStr: `${nextMsg.rawDate} ${nextMsg.rawTime}`,
+          messageId: nextMsg.id,
         });
       }
     }
@@ -375,6 +457,7 @@ export default function App() {
           caption: prevMsg.text,
           sender: prevMsg.sender,
           dateStr: `${prevMsg.rawDate} ${prevMsg.rawTime}`,
+          messageId: prevMsg.id,
         });
       }
     }
@@ -388,34 +471,33 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-screen w-full bg-[#0c1317] text-[#e9edef] overflow-hidden select-none font-sans">
-      {/* Hidden input for adding files anywhere */}
+    <div className="flex h-screen w-screen overflow-hidden bg-[#0c1317] text-[#e9edef] font-sans select-none">
+      {/* Hidden file input for adding chats */}
       <input
-        ref={fileInputMainRef}
         type="file"
-        accept=".zip,application/zip"
-        multiple
+        ref={fileInputMainRef}
         onChange={(e) => {
           if (e.target.files) handleAddFiles(e.target.files);
           e.target.value = '';
         }}
+        accept=".zip,application/zip"
+        multiple
         className="hidden"
       />
 
-      {/* LEFT COLUMN: WhatsApp Desktop Chat List Sidebar */}
+      {/* LEFT COLUMN: Sidebar Chat List */}
       <div
         className={`${
           activeSessionId ? 'hidden md:flex' : 'flex'
-        } h-full shrink-0 w-full md:w-80 lg:w-96 z-30`}
+        } w-full md:w-[360px] lg:w-[400px] shrink-0 flex-col h-full border-r border-neutral-800 bg-[#111b21] z-20 transition-all`}
       >
         <ChatSidebar
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSelectSession={handleSelectSession}
-          onAddFiles={handleAddFiles}
-          onLoadDemo={handleLoadDemo}
-          onRenameSession={handleRenameSession}
           onDeleteSession={handleDeleteSession}
+          onRenameSession={handleRenameSession}
+          onAddFiles={handleAddFiles}
           loadingCount={loadingCount}
         />
       </div>
@@ -424,7 +506,7 @@ export default function App() {
       <main
         className={`${
           activeSessionId ? 'flex' : 'hidden md:flex'
-        } flex-1 flex-col h-full relative overflow-hidden bg-[#0b141a] z-10`}
+        } flex-1 flex-col h-full relative overflow-hidden bg-[#0b141a] z-10 w-full min-w-0`}
       >
         {activeSession ? (
           <>
@@ -445,18 +527,22 @@ export default function App() {
             {/* In-Chat Search Bar */}
             {isSearchOpen && (
               <SearchBar
-                filterOptions={filterOptions}
-                onChangeFilter={setFilterOptions}
-                onClose={() => setIsSearchOpen(false)}
-                participants={activeSession.metadata.participants}
+                searchQuery={searchQuery}
+                onChangeQuery={setSearchQuery}
+                onClose={() => {
+                  setIsSearchOpen(false);
+                  setSearchQuery('');
+                }}
                 totalMatches={searchMatches.length}
                 currentMatchIndex={currentMatchIndex}
                 onNextMatch={handleNextMatch}
                 onPrevMatch={handlePrevMatch}
+                matches={searchMatches}
+                onSelectMatch={handleSelectMatch}
               />
             )}
 
-            {/* Conversation Stream */}
+            {/* Conversation Stream (Always shows the real full conversation in context) */}
             <div className="flex-1 relative overflow-hidden bg-[#0b141a]">
               {/* Subtle WhatsApp Wallpaper background */}
               <WhatsAppBackground />
@@ -465,27 +551,17 @@ export default function App() {
               <div
                 ref={chatScrollContainerRef}
                 onScroll={handleScroll}
-                className="absolute inset-0 overflow-y-auto px-2 sm:px-8 md:px-12 lg:px-20 py-4 space-y-1 z-10 scrollbar-thin scrollbar-thumb-neutral-700/60 scrollbar-track-transparent"
+                className="absolute inset-0 overflow-y-auto px-1.5 sm:px-6 md:px-10 lg:px-16 py-3 space-y-1 z-10 scrollbar-thin scrollbar-thumb-neutral-700/60 scrollbar-track-transparent"
               >
-                {filteredMessages.length === 0 ? (
+                {adjustedMessages.length === 0 ? (
                   <div className="flex flex-col items-center justify-center h-full text-center p-6 text-[#8696a0]">
                     <MessageCircle className="w-12 h-12 mb-3 text-neutral-600" />
-                    <p className="text-base font-medium text-[#e9edef]">No se encontraron mensajes</p>
-                    <p className="text-xs mt-1">Prueba cambiando los términos de búsqueda o filtros aplicados.</p>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setFilterOptions({ searchQuery: '', participant: '', mediaType: 'all' })
-                      }
-                      className="mt-3 px-3 py-1.5 rounded-lg bg-[#202c33] text-emerald-400 hover:text-emerald-300 text-xs font-semibold"
-                    >
-                      Restablecer filtros
-                    </button>
+                    <p className="text-base font-medium text-[#e9edef]">No hay mensajes en este chat</p>
                   </div>
                 ) : (
-                  filteredMessages.map((msg, idx) => {
-                    const prevMsg = idx > 0 ? filteredMessages[idx - 1] : null;
-                    const nextMsg = idx < filteredMessages.length - 1 ? filteredMessages[idx + 1] : null;
+                  adjustedMessages.map((msg, idx) => {
+                    const prevMsg = idx > 0 ? adjustedMessages[idx - 1] : null;
+                    const nextMsg = idx < adjustedMessages.length - 1 ? adjustedMessages[idx + 1] : null;
 
                     // Date separator logic
                     const isNewDate = !prevMsg || prevMsg.rawDate !== msg.rawDate;
@@ -498,7 +574,9 @@ export default function App() {
                       !nextMsg || nextMsg.rawDate !== msg.rawDate || nextMsg.isSystem || nextMsg.sender !== msg.sender;
 
                     const isCurrentSearchResult =
-                      searchMatches.length > 0 && searchMatches[currentMatchIndex] === msg.id;
+                      searchMatches.length > 0 && searchMatches[currentMatchIndex]?.id === msg.id;
+
+                    const isHighlighted = highlightedMessageId === msg.id;
 
                     return (
                       <React.Fragment key={msg.id}>
@@ -506,25 +584,32 @@ export default function App() {
                         {isNewDate && (
                           <div
                             id={`date-sep-${ymd}`}
-                            className="flex justify-center my-3 select-none transition-all duration-300"
+                            className="flex justify-center my-2.5 sm:my-3 select-none transition-all duration-300"
                           >
-                            <div className="px-3.5 py-1 rounded-lg bg-[#182229]/95 border border-neutral-700/30 text-[11.5px] font-semibold text-[#8696a0] uppercase tracking-wider shadow-xs transition-all duration-300">
+                            <div className="px-3 py-0.5 sm:px-3.5 sm:py-1 rounded-lg bg-[#182229]/95 border border-neutral-700/30 text-[10.5px] sm:text-[11.5px] font-semibold text-[#8696a0] uppercase tracking-wider shadow-xs transition-all duration-300">
                               {formatDateSeparator(msg.rawDate)}
                             </div>
                           </div>
                         )}
 
-                        {/* Message Bubble */}
+                        {/* Message Bubble with contextual rendering */}
                         <MessageItem
                           message={msg}
                           isFirstInGroup={isFirstInGroup}
                           isLastInGroup={isLastInGroup}
                           isGroup={activeSession.metadata.isGroup}
-                          searchQuery={filterOptions.searchQuery}
+                          searchQuery={searchQuery}
                           isSearchResult={isCurrentSearchResult}
-                          onOpenMedia={(attachment, caption, sender, dateStr) => {
-                            setActiveMedia({ attachment, caption, sender, dateStr });
+                          isHighlighted={isHighlighted}
+                          onOpenMedia={(attachment, caption, sender, dateStr, messageId) => {
+                            setActiveMedia({ attachment, caption, sender, dateStr, messageId });
                           }}
+                          isPlayingAudio={activePlayingAudioId === msg.id}
+                          audioPlaybackRate={audioPlaybackRate}
+                          onPlayAudio={() => handlePlayAudio(msg.id)}
+                          onPauseAudio={() => handlePauseAudio(msg.id)}
+                          onAudioEnded={() => handleAudioEnded(msg.id)}
+                          onChangeAudioRate={handleChangeAudioRate}
                         />
                       </React.Fragment>
                     );
@@ -532,15 +617,15 @@ export default function App() {
                 )}
               </div>
 
-              {/* Floating Navigation Controls (Bottom Right) */}
-              <div className="absolute bottom-5 right-5 sm:right-7 z-20 flex flex-col gap-2 pointer-events-auto">
+              {/* Floating Navigation Controls (Bottom Right - touch friendly) */}
+              <div className="absolute bottom-3 right-3 sm:bottom-6 sm:right-6 z-20 flex flex-col gap-2 pointer-events-auto">
                 {showScrollTop && (
                   <button
                     type="button"
                     onClick={scrollToTop}
                     title="Volver al inicio del chat (↑)"
                     aria-label="Volver al inicio del chat"
-                    className="p-2.5 rounded-full bg-[#202c33]/90 hover:bg-[#2a3942] text-[#8696a0] hover:text-[#00a884] shadow-xl border border-neutral-700/60 backdrop-blur-md transition active:scale-95 flex items-center justify-center group"
+                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#202c33]/90 hover:bg-[#2a3942] text-[#8696a0] hover:text-[#00a884] shadow-xl border border-neutral-700/60 backdrop-blur-md transition active:scale-95 flex items-center justify-center group touch-manipulation cursor-pointer"
                   >
                     <ArrowUp className="w-5 h-5 group-hover:scale-110 transition-transform" />
                   </button>
@@ -552,7 +637,7 @@ export default function App() {
                     onClick={() => scrollToBottom(true)}
                     title="Ir al final del chat (↓)"
                     aria-label="Ir al final del chat"
-                    className="p-2.5 rounded-full bg-[#202c33]/90 hover:bg-[#2a3942] text-[#8696a0] hover:text-[#00a884] shadow-xl border border-neutral-700/60 backdrop-blur-md transition active:scale-95 flex items-center justify-center group"
+                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#202c33]/90 hover:bg-[#2a3942] text-[#8696a0] hover:text-[#00a884] shadow-xl border border-neutral-700/60 backdrop-blur-md transition active:scale-95 flex items-center justify-center group touch-manipulation cursor-pointer"
                   >
                     <ArrowDown className="w-5 h-5 group-hover:scale-110 transition-transform" />
                   </button>
@@ -574,12 +659,11 @@ export default function App() {
               messages={adjustedMessages}
               isOpen={isInfoOpen}
               onClose={() => setIsInfoOpen(false)}
-              onSelectMedia={(attachment, caption, sender, dateStr) => {
-                setActiveMedia({ attachment, caption, sender, dateStr });
+              onSelectMedia={(attachment, caption, sender, dateStr, messageId) => {
+                setActiveMedia({ attachment, caption, sender, dateStr, messageId });
               }}
               onJumpToMessage={(msgId) => {
-                setIsInfoOpen(false);
-                jumpToMessage(msgId);
+                goToMessage(msgId, activeSession.id);
               }}
             />
           </>
@@ -587,23 +671,28 @@ export default function App() {
           /* Empty Chat Welcome State (when no chat is selected) */
           <EmptyChatState
             onAddChat={() => fileInputMainRef.current?.click()}
-            onLoadDemo={handleLoadDemo}
             hasChats={sessions.length > 0}
           />
         )}
       </main>
 
-      {/* Fullscreen Media Lightbox Modal */}
+      {/* Fullscreen Media Lightbox Modal with "Ver en el chat" navigation */}
       <MediaModal
         attachment={activeMedia?.attachment || null}
         caption={activeMedia?.caption}
         sender={activeMedia?.sender}
         dateStr={activeMedia?.dateStr}
+        messageId={activeMedia?.messageId}
         onClose={() => setActiveMedia(null)}
         onNext={handleNextMedia}
         onPrev={handlePrevMedia}
         hasNext={activeMediaIndex !== -1 && activeMediaIndex < visualMediaMessages.length - 1}
         hasPrev={activeMediaIndex > 0}
+        onJumpToMessage={(msgId) => {
+          if (activeSession) {
+            goToMessage(msgId, activeSession.id);
+          }
+        }}
       />
     </div>
   );

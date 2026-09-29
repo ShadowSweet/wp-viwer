@@ -13,7 +13,6 @@ import {
   Music,
   Smile,
   FileText,
-  Sparkles,
   X,
   FileArchive
 } from 'lucide-react';
@@ -24,7 +23,6 @@ interface ChatSidebarProps {
   activeSessionId: string | null;
   onSelectSession: (id: string) => void;
   onAddFiles: (files: FileList | File[]) => void;
-  onLoadDemo: () => void;
   onRenameSession: (id: string, newTitle: string) => void;
   onDeleteSession: (id: string) => void;
   loadingCount: number;
@@ -35,7 +33,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   activeSessionId,
   onSelectSession,
   onAddFiles,
-  onLoadDemo,
   onRenameSession,
   onDeleteSession,
   loadingCount,
@@ -79,7 +76,6 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       onAddFiles(e.target.files);
-      // Reset input value so same files can be re-selected if needed
       e.target.value = '';
     }
   };
@@ -123,7 +119,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`h-full w-full md:w-80 lg:w-96 bg-[#111b21] border-r border-neutral-800 flex flex-col select-none relative transition-colors ${
+      className={`h-full w-full md:w-72 lg:w-80 xl:w-96 bg-[#111b21] border-r border-neutral-800 flex flex-col select-none relative transition-colors ${
         isDragOver ? 'ring-2 ring-emerald-500 bg-emerald-950/20' : ''
       }`}
     >
@@ -139,38 +135,28 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
 
       {/* Sidebar Header */}
       <div className="p-3.5 bg-[#202c33] flex items-center justify-between border-b border-neutral-800/80 shrink-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-[#00a884]/20 border border-[#00a884]/30 flex items-center justify-center text-[#00a884]">
             <FileArchive className="w-4 h-4" />
           </div>
           <h1 className="text-base font-bold text-white tracking-tight">Chats</h1>
-          <span className="text-[11px] font-semibold text-[#8696a0] font-mono ml-0.5">
-            ({sessions.length})
-          </span>
+          {sessions.length > 0 && (
+            <span className="text-[11px] font-semibold text-[#8696a0] font-mono">
+              ({sessions.length})
+            </span>
+          )}
         </div>
 
-        {/* Action Buttons: Add Chat & Demo */}
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onLoadDemo}
-            title="Cargar chat de ejemplo"
-            className="p-1.5 rounded-lg bg-[#111b21] hover:bg-[#2a3942] text-emerald-400 hover:text-emerald-300 border border-emerald-500/20 text-xs font-medium transition flex items-center gap-1"
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline text-[11px]">Ejemplo</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            title="Agregar uno o varios archivos ZIP de WhatsApp"
-            className="py-1.5 px-2.5 rounded-lg bg-[#00a884] hover:bg-[#02906f] text-white text-xs font-semibold transition flex items-center gap-1 shadow-sm active:scale-95"
-          >
-            <Plus className="w-3.5 h-3.5 stroke-[3]" />
-            <span>Agregar chat</span>
-          </button>
-        </div>
+        {/* Action Button: Add Chat */}
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          title="Agregar uno o varios archivos ZIP de WhatsApp"
+          className="py-1.5 px-3 rounded-lg bg-[#00a884] hover:bg-[#02906f] text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer touch-manipulation"
+        >
+          <Plus className="w-4 h-4 stroke-[3]" />
+          <span>Agregar chat</span>
+        </button>
       </div>
 
       {/* Loading banner if parsing multiple files */}
@@ -219,10 +205,10 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                 </p>
                 <button
                   type="button"
-                  onClick={onLoadDemo}
-                  className="px-3 py-1.5 rounded-lg bg-[#202c33] hover:bg-[#2a3942] text-emerald-400 font-medium text-xs transition"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-4 py-2 rounded-lg bg-[#00a884] hover:bg-[#02906f] text-white font-medium text-xs transition active:scale-95 shadow-sm"
                 >
-                  Probar con chat de ejemplo
+                  Seleccionar archivo .ZIP
                 </button>
               </div>
             )}
@@ -247,7 +233,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                 onClick={() => {
                   if (!isEditing) onSelectSession(session.id);
                 }}
-                className={`relative px-3.5 py-3 cursor-pointer transition flex items-center gap-3 group border-l-4 ${
+                className={`relative px-3.5 py-3 cursor-pointer transition flex items-center gap-3 group border-l-4 touch-manipulation ${
                   isSelected
                     ? 'bg-[#2a3942] border-[#00a884]'
                     : 'border-transparent hover:bg-[#202c33]/70'
@@ -312,7 +298,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                   </div>
                 </div>
 
-                {/* Context Menu Button */}
+                {/* Context Menu Button (Accessible on Mobile Tap) */}
                 <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
@@ -320,7 +306,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
                       setOpenMenuId(openMenuId === session.id ? null : session.id)
                     }
                     title="Opciones del chat"
-                    className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-700/50 opacity-0 group-hover:opacity-100 transition"
+                    className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-700/50 md:opacity-0 md:group-hover:opacity-100 transition active:scale-95"
                   >
                     <MoreVertical className="w-4 h-4" />
                   </button>

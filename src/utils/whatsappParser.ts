@@ -27,6 +27,16 @@ const ATTACHMENT_PATTERNS = [
 // Omitted media indicator phrases
 const OMITTED_MEDIA_REGEX = /<(?:archivo omitido|media omitted|medien ausgeschlossen|fichier omis|audio omitido|imagen omitida|video omitido|sticker omitido)>/i;
 
+// WhatsApp edited message patterns
+const EDITED_TAG_REGEX = /[\s\n]*<(?:Se editó este mensaje|This message was edited|Ce message a été modifié|Diese Nachricht wurde bearbeitet)\.?>/gi;
+const EDITED_PAREN_REGEX = /[\s\n]*\((?:Se editó este mensaje|This message was edited)\.?\)/gi;
+
+// WhatsApp forwarded message patterns
+const FORWARDED_REGEX = /^(?:Mensaje reenviado|Reenviado|Forwarded message|Forwarded|Transféré|Weitergeleitete Nachricht):\s*\n?/i;
+
+// WhatsApp status / story reply patterns
+const STORY_REPLY_REGEX = /^(?:Respondió a tu estado|Respondió a tu historia|Respondió a un estado|Respondió al estado de\s+([^:\n]+)|Replied to your status|Replied to your story|Replied to status):\s*\n?/i;
+
 export interface RawParsedMessage {
   rawDate: string;
   rawTime: string;
@@ -133,8 +143,21 @@ export function detectMediaType(fileName: string): MediaType {
 /**
  * Extracts possible attached media filename and caption from a message line
  */
-export function extractAttachmentInfo(content: string): { fileName?: string; caption?: string; isOmitted?: boolean } {
+export function extractAttachmentInfo(content: string): {
+  fileName?: string;
+  caption?: string;
+  isOmitted?: boolean;
+  isViewOnce?: boolean;
+} {
   const cleaned = cleanText(content);
+
+  // Check view-once photo specifically (e.g. <imagen omitida> or imagen omitida -> Foto para ver una sola vez)
+  if (
+    /^<?(?:imagen omitida|image omitted|Foto para ver una sola vez|foto de una sola vez)>?$/i.test(cleaned) ||
+    /^(?:Foto|Video) para ver una sola vez$/i.test(cleaned)
+  ) {
+    return { isViewOnce: true, caption: 'Foto para ver una sola vez' };
+  }
 
   // Check omitted media placeholder
   if (OMITTED_MEDIA_REGEX.test(cleaned)) {
@@ -309,13 +332,27 @@ export function buildMessagesWithAttachments(
 
   for (let idx = 0; idx < rawMessages.length; idx++) {
     const raw = rawMessages[idx];
+
+    // Check if message is a pure standalone "<Se editó este mensaje.>"
+    const rawTrimmed = raw.content.trim();
+    const isPureEdit =
+      /^<(?:Se editó este mensaje|This message was edited|Ce message a été modifié|Diese Nachricht wurde bearbeitet)\.?>$/i.test(rawTrimmed) ||
+      /^\((?:Se editó este mensaje|This message was edited)\.?\)$/i.test(rawTrimmed);
+
+    if (isPureEdit) {
+      if (messages.length > 0 && messages[messages.length - 1].sender === raw.sender) {
+        messages[messages.length - 1].isEdited = true;
+        continue;
+      }
+    }
+
     const timestamp = parseDateToEpoch(raw.rawDate, raw.rawTime);
-    const { fileName, caption } = extractAttachmentInfo(raw.content);
+    const { fileName, caption, isViewOnce } = extractAttachmentInfo(raw.content);
 
     let attachment: Attachment | undefined = undefined;
     // If an attachment tag was matched, caption contains any remaining text (or empty string "")
     // If NO attachment was in the message, text remains raw.content
-    let text = caption !== undefined ? caption : raw.content;
+    let text = isViewOnce ? 'Foto para ver una sola vez' : caption !== undefined ? caption : raw.content;
     let unmatchedAttachmentName: string | undefined = undefined;
 
     if (fileName) {
@@ -323,6 +360,53 @@ export function buildMessagesWithAttachments(
       if (!attachment) {
         unmatchedAttachmentName = fileName;
       }
+    }
+
+    // Check if edited
+    let isEdited = false;
+    if (
+      EDITED_TAG_REGEX.test(text) ||
+      EDITED_PAREN_REGEX.test(text) ||
+      EDITED_TAG_REGEX.test(raw.content) ||
+      EDITED_PAREN_REGEX.test(raw.content)
+    ) {
+      isEdited = true;
+      text = text.replace(EDITED_TAG_REGEX, '').replace(EDITED_PAREN_REGEX, '').trim();
+    }
+
+    // Check if forwarded
+    let isForwarded = false;
+    if (FORWARDED_REGEX.test(raw.content) || FORWARDED_REGEX.test(text)) {
+      isForwarded = true;
+      text = text.replace(FORWARDED_REGEX, '').trim();
+    }
+
+    // Check if story / status reply
+    let storyReply: Message['storyReply'] = undefined;
+    const storyMatch = raw.content.match(STORY_REPLY_REGEX) || text.match(STORY_REPLY_REGEX);
+    if (storyMatch) {
+      let storyTitle = 'Tu estado';
+      if (storyMatch[1] && storyMatch[1].trim()) {
+        storyTitle = `Estado de ${cleanText(storyMatch[1]).trim()}`;
+      } else if (
+        raw.content.toLowerCase().startsWith('respondió a un estado') ||
+        raw.content.toLowerCase().startsWith('replied to status')
+      ) {
+        storyTitle = 'Estado';
+      }
+
+      text = text.replace(STORY_REPLY_REGEX, '').trim();
+
+      // If an image/video was included in the message, use it as thumbnail
+      let thumbnailUrl: string | undefined = undefined;
+      if (attachment && (attachment.mediaType === 'image' || attachment.mediaType === 'video')) {
+        thumbnailUrl = attachment.url;
+      }
+
+      storyReply = {
+        storyTitle,
+        thumbnailUrl,
+      };
     }
 
     // System message categorization
@@ -356,6 +440,10 @@ export function buildMessagesWithAttachments(
       attachment,
       unmatchedAttachmentName,
       hasAttachmentError: !!unmatchedAttachmentName,
+      isViewOnce: !!isViewOnce,
+      isEdited,
+      isForwarded,
+      storyReply,
     };
 
     messages.push(msg);

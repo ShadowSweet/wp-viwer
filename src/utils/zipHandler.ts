@@ -402,7 +402,14 @@ export function createChatSessionFromData(
   const selfNamed = metadata.participants.find(
     (p) => p.toLowerCase() === 'tú' || p.toLowerCase() === 'you'
   );
-  const currentUser = selfNamed || metadata.participants[0] || 'Tú';
+  // Invert default participant alignment: select participants[1] instead of participants[0]
+  // so the visual alignment of participants is completely inverted as requested
+  const currentUser =
+    selfNamed ||
+    (metadata.participants.length >= 2
+      ? metadata.participants[1]
+      : metadata.participants[0]) ||
+    'Tú';
 
   // Last non-system message for preview
   const lastMsg =

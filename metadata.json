@@ -1,6 +1,8 @@
 {
-  "name": "WhatsViewer - Visualizador de Chats Exportados de WhatsApp",
+  "name": "WhatsViewer",
   "description": "Visualizador web completo de chats exportados de WhatsApp en formato .ZIP con reconstrucción multimedia de fotos, audios, videos, stickers y notas de voz 100% privado y local.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

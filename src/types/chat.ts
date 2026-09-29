@@ -14,6 +14,12 @@ export interface Attachment {
   duration?: number;
 }
 
+export interface StoryReplyInfo {
+  storyTitle?: string; // e.g. "Tu estado", "Estado"
+  storyText?: string;
+  thumbnailUrl?: string;
+}
+
 export interface Message {
   id: string;
   rawDate: string; // Original date string e.g. "29/09/2026"
@@ -29,6 +35,10 @@ export interface Message {
     sender?: string;
     text?: string;
   };
+  isViewOnce?: boolean;
+  isEdited?: boolean;
+  isForwarded?: boolean;
+  storyReply?: StoryReplyInfo;
   hasAttachmentError?: boolean;
   unmatchedAttachmentName?: string;
 }

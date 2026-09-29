@@ -1,15 +1,13 @@
 import React from 'react';
-import { MessageSquareDashed, FileArchive, Plus, ShieldCheck } from 'lucide-react';
+import { MessageSquareDashed, Plus, ShieldCheck } from 'lucide-react';
 
 interface EmptyChatStateProps {
   onAddChat: () => void;
-  onLoadDemo: () => void;
   hasChats: boolean;
 }
 
 export const EmptyChatState: React.FC<EmptyChatStateProps> = ({
   onAddChat,
-  onLoadDemo,
   hasChats,
 }) => {
   return (
@@ -28,7 +26,7 @@ export const EmptyChatState: React.FC<EmptyChatStateProps> = ({
 
         <p className="text-sm text-[#8696a0] mb-8 leading-relaxed">
           {hasChats
-            ? 'Elige un chat de la columna izquierda para leer la conversación, ver fotos, stickers y escuchar audios.'
+            ? 'Elige un chat de la lista para leer la conversación, ver fotos, stickers y escuchar audios.'
             : 'Carga uno o varios archivos .ZIP exportados desde WhatsApp para reconstruir tus conversaciones con fotos, stickers y audios de forma 100% local y privada.'}
         </p>
 
@@ -36,21 +34,11 @@ export const EmptyChatState: React.FC<EmptyChatStateProps> = ({
           <button
             type="button"
             onClick={onAddChat}
-            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#00a884] hover:bg-[#02906f] text-white text-xs font-semibold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 active:scale-95 cursor-pointer"
+            className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#00a884] hover:bg-[#02906f] text-white text-sm font-semibold transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 active:scale-95 cursor-pointer touch-manipulation"
           >
             <Plus className="w-4 h-4 stroke-[3]" />
             <span>Agregar chat (.ZIP)</span>
           </button>
-
-          {!hasChats && (
-            <button
-              type="button"
-              onClick={onLoadDemo}
-              className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#202c33] hover:bg-[#2a3942] text-emerald-400 border border-emerald-500/20 text-xs font-semibold transition active:scale-95 cursor-pointer"
-            >
-              Probar con chat de ejemplo
-            </button>
-          )}
         </div>
 
         <div className="flex items-center gap-2 mt-10 text-xs text-neutral-400 bg-[#111b21]/70 px-4 py-2 rounded-full border border-neutral-800">

@@ -15,14 +15,12 @@ import { ParseProgress } from '../utils/zipHandler';
 
 interface DropZoneProps {
   onFileSelected: (file: File) => void;
-  onLoadDemo: () => void;
   progress: ParseProgress | null;
   error: string | null;
 }
 
 export const DropZone: React.FC<DropZoneProps> = ({
   onFileSelected,
-  onLoadDemo,
   progress,
   error,
 }) => {
@@ -80,16 +78,6 @@ export const DropZone: React.FC<DropZoneProps> = ({
             <p className="text-xs text-[#8696a0]">Visualizador de chats exportados de WhatsApp con multimedia</p>
           </div>
         </div>
-
-        {/* Demo Button */}
-        <button
-          type="button"
-          onClick={onLoadDemo}
-          className="flex items-center gap-2 text-xs font-semibold px-3.5 py-2 rounded-lg bg-[#202c33] hover:bg-[#2a3942] text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 transition shadow-sm active:scale-95 cursor-pointer"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Ver Chat de Ejemplo</span>
-        </button>
       </header>
 
       {/* Main Center Area */}

@@ -53,9 +53,15 @@ function createSvgDataUri(svg: string): string {
 }
 
 export function generateDemoChat(): { messages: Message[]; metadata: ChatMetadata; objectUrls: string[] } {
-  // Voice note blob URL
-  const audioBlob = createSyntheticVoiceNoteBlob(8);
-  const audioUrl = URL.createObjectURL(audioBlob);
+  // Voice note blob URLs
+  const audioBlob1 = createSyntheticVoiceNoteBlob(5);
+  const audioUrl1 = URL.createObjectURL(audioBlob1);
+
+  const audioBlob2 = createSyntheticVoiceNoteBlob(4);
+  const audioUrl2 = URL.createObjectURL(audioBlob2);
+
+  const audioBlob3 = createSyntheticVoiceNoteBlob(4);
+  const audioUrl3 = URL.createObjectURL(audioBlob3);
 
   // Demo Beach Photo SVG
   const beachPhotoSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600">
@@ -255,9 +261,28 @@ export function generateDemoChat(): { messages: Message[]; metadata: ChatMetadat
         extension: 'opus',
         mimeType: 'audio/wav',
         mediaType: 'voice',
-        url: audioUrl,
-        size: 345000,
-        duration: 8,
+        url: audioUrl1,
+        size: 215000,
+        duration: 5,
+      },
+    },
+    {
+      id: 'demo-msg-8b',
+      rawDate: '28/09/2026',
+      rawTime: '10:18',
+      timestamp: new Date(2026, 8, 28, 10, 18, 0).getTime(),
+      sender: 'Sofia Rodríguez',
+      text: '',
+      isSystem: false,
+      attachment: {
+        fileName: 'AUD-20260928-WA0004.opus',
+        originalName: 'AUD-20260928-WA0004.opus',
+        extension: 'opus',
+        mimeType: 'audio/wav',
+        mediaType: 'voice',
+        url: audioUrl2,
+        size: 190000,
+        duration: 4,
       },
     },
     {
@@ -277,6 +302,25 @@ export function generateDemoChat(): { messages: Message[]; metadata: ChatMetadat
         mediaType: 'image',
         url: coffeePhotoUrl,
         size: 610000,
+      },
+    },
+    {
+      id: 'demo-msg-9b',
+      rawDate: '29/09/2026',
+      rawTime: '09:31',
+      timestamp: new Date(2026, 8, 29, 9, 31, 0).getTime(),
+      sender: 'Carlos Mendoza',
+      text: '',
+      isSystem: false,
+      attachment: {
+        fileName: 'PTT-20260929-WA0005.opus',
+        originalName: 'PTT-20260929-WA0005.opus',
+        extension: 'opus',
+        mimeType: 'audio/wav',
+        mediaType: 'voice',
+        url: audioUrl3,
+        size: 195000,
+        duration: 4,
       },
     },
     {
@@ -324,6 +368,59 @@ export function generateDemoChat(): { messages: Message[]; metadata: ChatMetadat
       text: '¡Excelente! Recuerden traer toalla y protector solar. 🏖️🚗',
       isSystem: false,
       isOutgoing: true,
+      isEdited: true,
+    },
+    {
+      id: 'demo-msg-12b',
+      rawDate: '29/09/2026',
+      rawTime: '09:41',
+      timestamp: new Date(2026, 8, 29, 9, 41, 0).getTime(),
+      sender: 'Carlos Mendoza',
+      text: 'El pronóstico dice que habrá sol todo el fin de semana, 28°C despejado ☀️🌊',
+      isSystem: false,
+      isForwarded: true,
+    },
+    {
+      id: 'demo-msg-13',
+      rawDate: '29/09/2026',
+      rawTime: '09:42',
+      timestamp: new Date(2026, 8, 29, 9, 42, 0).getTime(),
+      sender: 'Sofia Rodríguez',
+      text: 'Miren este Reel con los mejores atardeceres de la zona donde vamos: https://www.instagram.com/reel/C-K3pWsvY_D/',
+      isSystem: false,
+    },
+    {
+      id: 'demo-msg-14',
+      rawDate: '29/09/2026',
+      rawTime: '09:45',
+      timestamp: new Date(2026, 8, 29, 9, 45, 0).getTime(),
+      sender: 'Carlos Mendoza',
+      text: 'Y en TikTok encontré este video con los restaurantes recomendados: https://www.tiktok.com/@gastronomia_playa/video/7384910283746592810',
+      isSystem: false,
+    },
+    {
+      id: 'demo-msg-14b',
+      rawDate: '29/09/2026',
+      rawTime: '09:47',
+      timestamp: new Date(2026, 8, 29, 9, 47, 0).getTime(),
+      sender: 'Sofia Rodríguez',
+      text: '¡Esa foto de la playa que subiste al estado quedó espectacular! ¿Ahí es donde nos quedamos? 😍',
+      isSystem: false,
+      storyReply: {
+        storyTitle: 'Tu estado',
+        thumbnailUrl: beachPhotoUrl,
+        storyText: 'Foto de estado',
+      },
+    },
+    {
+      id: 'demo-msg-15',
+      rawDate: '29/09/2026',
+      rawTime: '09:48',
+      timestamp: new Date(2026, 8, 29, 9, 48, 0).getTime(),
+      sender: 'Tú',
+      text: '¡Se ve increíble! Aquí encontré también esta publicación del hotel: https://www.instagram.com/p/C-PqW55o8K1/',
+      isSystem: false,
+      isOutgoing: true,
     },
   ];
 
@@ -337,15 +434,15 @@ export function generateDemoChat(): { messages: Message[]; metadata: ChatMetadat
     mediaCounts: {
       images: 2,
       videos: 0,
-      audios: 1,
+      audios: 3,
       stickers: 1,
       gifs: 1,
       documents: 1,
-      total: 6,
+      total: 8,
     },
     unmatchedFilesCount: 0,
     unmatchedFiles: [],
   };
 
-  return { messages: demoMessages, metadata: demoMetadata, objectUrls: [audioUrl] };
+  return { messages: demoMessages, metadata: demoMetadata, objectUrls: [audioUrl1, audioUrl2, audioUrl3] };
 }
