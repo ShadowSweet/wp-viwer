@@ -10,9 +10,13 @@ import {
   MessageSquare,
   AlertCircle,
   Download,
+  Star,
+  Pin,
+  ExternalLink,
 } from 'lucide-react';
 import { Attachment, ChatMetadata, Message } from '../types/chat';
 import { formatBytes } from '../utils/dateUtils';
+import { formatParticipantName } from '../utils/participantUtils';
 import { AudioPlayer } from './AudioPlayer';
 
 interface ChatInfoDrawerProps {
@@ -28,6 +32,8 @@ interface ChatInfoDrawerProps {
     messageId?: string
   ) => void;
   onJumpToMessage: (messageId: string) => void;
+  onToggleStar?: (messageId: string) => void;
+  onTogglePin?: (messageId: string) => void;
   audioPlaybackRate?: number;
   onChangeAudioRate?: (rate: number) => void;
 }
@@ -39,10 +45,12 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
   onClose,
   onSelectMedia,
   onJumpToMessage,
+  onToggleStar,
+  onTogglePin,
   audioPlaybackRate = 1,
   onChangeAudioRate,
 }) => {
-  const [activeTab, setActiveTab] = useState<'info' | 'media' | 'docs' | 'audio'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'media' | 'docs' | 'audio' | 'starred' | 'pinned'>('info');
 
   // Independent audio playback state for ChatInfoDrawer
   const [activePlayingAudioId, setActivePlayingAudioId] = useState<string | null>(null);
@@ -72,12 +80,14 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
     (m) => m.attachment?.mediaType === 'audio' || m.attachment?.mediaType === 'voice'
   );
   const docMedia = mediaItems.filter((m) => m.attachment?.mediaType === 'document');
+  const starredMessages = messages.filter((m) => m.isStarred);
+  const pinnedMessages = messages.filter((m) => m.isPinned);
 
   // Compute message counts per participant
   const participantStats = metadata.participants
     .map((name) => {
       const count = messages.filter((m) => !m.isSystem && m.sender === name).length;
-      return { name, count };
+      return { name, displayName: formatParticipantName(name), count };
     })
     .sort((a, b) => b.count - a.count);
 
@@ -146,6 +156,30 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
           }`}
         >
           Docs ({docMedia.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('starred')}
+          className={`py-3 px-3.5 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] flex items-center gap-1.5 ${
+            activeTab === 'starred'
+              ? 'border-[#00a884] text-[#00a884]'
+              : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+          }`}
+        >
+          <Star className="w-3.5 h-3.5" />
+          <span>Destacados ({starredMessages.length})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('pinned')}
+          className={`py-3 px-3.5 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] flex items-center gap-1.5 ${
+            activeTab === 'pinned'
+              ? 'border-[#00a884] text-[#00a884]'
+              : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+          }`}
+        >
+          <Pin className="w-3.5 h-3.5" />
+          <span>Fijados ({pinnedMessages.length})</span>
         </button>
       </div>
 
@@ -227,7 +261,7 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
                   return (
                     <div key={stat.name} className="text-xs space-y-1">
                       <div className="flex justify-between text-[#e9edef]">
-                        <span className="font-medium truncate max-w-[200px]">{stat.name}</span>
+                        <span className="font-medium truncate max-w-[200px]">{stat.displayName || stat.name}</span>
                         <span className="font-mono text-[#8696a0]">
                           {stat.count} msgs ({percentage}%)
                         </span>
@@ -458,6 +492,190 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
                   </div>
                 </div>
               ))
+            )}
+          </div>
+        )}
+
+        {/* Starred Messages Tab */}
+        {activeTab === 'starred' && (
+          <div className="space-y-2.5">
+            {starredMessages.length === 0 ? (
+              <div className="text-center py-12 px-4 text-[#8696a0]">
+                <Star className="w-10 h-10 mx-auto mb-2 text-neutral-600 stroke-[1.5]" />
+                <p className="text-sm font-medium text-[#e9edef]">No hay mensajes destacados</p>
+                <p className="text-xs text-[#8696a0] mt-1 leading-relaxed">
+                  Destaca cualquier mensaje importante usando el menú (⭐) de un mensaje en el chat.
+                </p>
+              </div>
+            ) : (
+              starredMessages.map((m) => {
+                const senderName = formatParticipantName(m.sender);
+                return (
+                  <div
+                    key={m.id}
+                    className="p-3 rounded-xl bg-[#202c33]/70 border border-neutral-800 space-y-2 hover:border-neutral-700 transition"
+                  >
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-[#00a884] truncate max-w-[200px]">
+                        {senderName}
+                      </span>
+                      <span className="text-[11px] text-[#8696a0] font-mono">
+                        {m.rawDate} · {m.rawTime}
+                      </span>
+                    </div>
+
+                    {/* Preview Content */}
+                    <div className="text-xs text-[#e9edef] leading-relaxed">
+                      {m.attachment && (
+                        <div className="mb-1.5 flex items-center gap-2 text-neutral-300">
+                          {m.attachment.mediaType === 'image' && (
+                            <img
+                              src={m.attachment.url}
+                              alt="Foto"
+                              className="w-12 h-12 rounded object-cover border border-white/10 shrink-0"
+                            />
+                          )}
+                          {m.attachment.mediaType === 'sticker' && (
+                            <img
+                              src={m.attachment.url}
+                              alt="Sticker"
+                              className="w-10 h-10 object-contain shrink-0"
+                            />
+                          )}
+                          {(m.attachment.mediaType === 'audio' || m.attachment.mediaType === 'voice') && (
+                            <span className="flex items-center gap-1.5 text-xs text-sky-400">
+                              <Music className="w-4 h-4" /> Audio / Mensaje de voz
+                            </span>
+                          )}
+                          {m.attachment.mediaType === 'document' && (
+                            <span className="flex items-center gap-1.5 text-xs text-rose-400 font-mono truncate">
+                              <FileText className="w-4 h-4 shrink-0" /> {m.attachment.fileName}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {m.text && <p className="line-clamp-3 select-text">{m.text}</p>}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center justify-between pt-1 border-t border-neutral-800/60">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onJumpToMessage(m.id);
+                          onClose();
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#00a884]/20 hover:bg-[#00a884]/30 text-emerald-400 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Ver en el chat</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onToggleStar?.(m.id)}
+                        title="Quitar de destacados"
+                        className="px-2 py-1 text-xs text-[#8696a0] hover:text-amber-400 hover:bg-neutral-800 rounded transition cursor-pointer flex items-center gap-1"
+                      >
+                        <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                        <span>Quitar</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+
+        {/* Pinned Messages Tab */}
+        {activeTab === 'pinned' && (
+          <div className="space-y-2.5">
+            {pinnedMessages.length === 0 ? (
+              <div className="text-center py-12 px-4 text-[#8696a0]">
+                <Pin className="w-10 h-10 mx-auto mb-2 text-neutral-600 stroke-[1.5]" />
+                <p className="text-sm font-medium text-[#e9edef]">No hay mensajes fijados</p>
+                <p className="text-xs text-[#8696a0] mt-1 leading-relaxed">
+                  Fija mensajes importantes desde el menú (📌) para mantenerlos accesibles arriba de la conversación.
+                </p>
+              </div>
+            ) : (
+              pinnedMessages.map((m) => {
+                const senderName = formatParticipantName(m.sender);
+                return (
+                  <div
+                    key={m.id}
+                    className="p-3 rounded-xl bg-[#202c33]/70 border border-neutral-800 space-y-2 hover:border-neutral-700 transition"
+                  >
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-[#00a884] truncate max-w-[200px]">
+                        {senderName}
+                      </span>
+                      <span className="text-[11px] text-[#8696a0] font-mono">
+                        {m.rawDate} · {m.rawTime}
+                      </span>
+                    </div>
+
+                    {/* Preview Content */}
+                    <div className="text-xs text-[#e9edef] leading-relaxed">
+                      {m.attachment && (
+                        <div className="mb-1.5 flex items-center gap-2 text-neutral-300">
+                          {m.attachment.mediaType === 'image' && (
+                            <img
+                              src={m.attachment.url}
+                              alt="Foto"
+                              className="w-12 h-12 rounded object-cover border border-white/10 shrink-0"
+                            />
+                          )}
+                          {m.attachment.mediaType === 'sticker' && (
+                            <img
+                              src={m.attachment.url}
+                              alt="Sticker"
+                              className="w-10 h-10 object-contain shrink-0"
+                            />
+                          )}
+                          {(m.attachment.mediaType === 'audio' || m.attachment.mediaType === 'voice') && (
+                            <span className="flex items-center gap-1.5 text-xs text-sky-400">
+                              <Music className="w-4 h-4" /> Audio / Mensaje de voz
+                            </span>
+                          )}
+                          {m.attachment.mediaType === 'document' && (
+                            <span className="flex items-center gap-1.5 text-xs text-rose-400 font-mono truncate">
+                              <FileText className="w-4 h-4 shrink-0" /> {m.attachment.fileName}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {m.text && <p className="line-clamp-3 select-text">{m.text}</p>}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center justify-between pt-1 border-t border-neutral-800/60">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onJumpToMessage(m.id);
+                          onClose();
+                        }}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#00a884]/20 hover:bg-[#00a884]/30 text-emerald-400 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span>Ver en el chat</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => onTogglePin?.(m.id)}
+                        title="Desfijar este mensaje"
+                        className="px-2 py-1 text-xs text-[#8696a0] hover:text-rose-400 hover:bg-neutral-800 rounded transition cursor-pointer flex items-center gap-1"
+                      >
+                        <Pin className="w-3.5 h-3.5 text-rose-400 fill-rose-400" />
+                        <span>Desfijar</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         )}

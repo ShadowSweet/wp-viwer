@@ -42,6 +42,8 @@ export interface Message {
   storyReply?: StoryReplyInfo;
   hasAttachmentError?: boolean;
   unmatchedAttachmentName?: string;
+  isStarred?: boolean;
+  isPinned?: boolean;
 }
 
 export interface ChatMetadata {

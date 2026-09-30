@@ -9,6 +9,7 @@ import {
   ArrowLeft,
 } from 'lucide-react';
 import { ChatMetadata } from '../types/chat';
+import { formatParticipantName } from '../utils/participantUtils';
 
 interface ChatHeaderProps {
   metadata: ChatMetadata;
@@ -35,7 +36,8 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   onToggleInfo,
   onBackToSidebar,
 }) => {
-  const title = displayTitle || metadata.title;
+  const rawTitle = displayTitle || metadata.title;
+  const title = formatParticipantName(rawTitle);
 
   // Generate avatar initials
   const initials = title
@@ -110,7 +112,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             >
               {metadata.participants.map((p) => (
                 <option key={p} value={p} className="bg-[#202c33] text-white">
-                  {p}
+                  {formatParticipantName(p)}
                 </option>
               ))}
             </select>

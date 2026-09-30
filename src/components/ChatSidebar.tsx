@@ -17,6 +17,7 @@ import {
   FileArchive
 } from 'lucide-react';
 import { ChatSession } from '../types/chat';
+import { formatParticipantName } from '../utils/participantUtils';
 
 interface ChatSidebarProps {
   sessions: ChatSession[];
@@ -48,9 +49,11 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(({
   const filteredSessions = sessions.filter((session) => {
     if (!searchQuery.trim()) return true;
     const query = searchQuery.toLowerCase().trim();
-    const titleMatch = (session.customTitle || session.title).toLowerCase().includes(query);
+    const rawTitle = (session.customTitle || session.title).toLowerCase();
+    const formattedTitle = formatParticipantName(session.customTitle || session.title).toLowerCase();
+    const titleMatch = rawTitle.includes(query) || formattedTitle.includes(query);
     const participantMatch = session.metadata.participants.some((p) =>
-      p.toLowerCase().includes(query)
+      p.toLowerCase().includes(query) || formatParticipantName(p).toLowerCase().includes(query)
     );
     return titleMatch || participantMatch;
   });
@@ -216,7 +219,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(({
         ) : (
           filteredSessions.map((session) => {
             const isSelected = session.id === activeSessionId;
-            const displayTitle = session.customTitle || session.title;
+            const displayTitle = formatParticipantName(session.customTitle || session.title);
             const initials = displayTitle
               .split(' ')
               .filter(Boolean)

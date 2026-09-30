@@ -18,6 +18,18 @@ import { WhatsAppBackground } from './components/WhatsAppBackground';
 import { DatePickerModal } from './components/DatePickerModal';
 import { EmptyChatState } from './components/EmptyChatState';
 import { PanelResizer } from './components/PanelResizer';
+import { PinnedMessagesBar } from './components/PinnedMessagesBar';
+import {
+  getStarredMessageIdsForChat,
+  getPinnedMessageIdsForChat,
+  toggleStarredMessageInStorage,
+  togglePinnedMessageInStorage,
+} from './utils/messageBookmarks';
+import {
+  hasLuisjaParticipant,
+  isMessageOutgoing,
+  formatParticipantName,
+} from './utils/participantUtils';
 
 const DEFAULT_SIDEBAR_WIDTH = 380;
 const MIN_SIDEBAR_WIDTH = 280;
@@ -241,14 +253,80 @@ export default function App() {
     setAudioPlaybackRate(newRate);
   };
 
+  // Starred and Pinned message ID sets for the active chat session
+  const [starredSet, setStarredSet] = useState<Set<string>>(new Set());
+  const [pinnedSet, setPinnedSet] = useState<Set<string>>(new Set());
+
+  // Reload starred & pinned sets whenever active session changes
+  useEffect(() => {
+    if (activeSessionId) {
+      const starredIds = getStarredMessageIdsForChat(activeSessionId);
+      const pinnedIds = getPinnedMessageIdsForChat(activeSessionId);
+      setStarredSet(new Set(starredIds));
+      setPinnedSet(new Set(pinnedIds));
+    } else {
+      setStarredSet(new Set());
+      setPinnedSet(new Set());
+    }
+  }, [activeSessionId]);
+
+  const handleToggleStar = useCallback((messageId: string) => {
+    if (!activeSessionId) return;
+    toggleStarredMessageInStorage(activeSessionId, messageId);
+    setStarredSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }, [activeSessionId]);
+
+  const handleTogglePin = useCallback((messageId: string) => {
+    if (!activeSessionId) return;
+    togglePinnedMessageInStorage(activeSessionId, messageId);
+    setPinnedSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }, [activeSessionId]);
+
   // Messages with adjusted outgoing perspective
   const adjustedMessages = useMemo(() => {
     if (!activeSession) return [];
-    return activeSession.messages.map((m) => ({
-      ...m,
-      isOutgoing: !m.isSystem && m.sender === activeSession.currentUser,
-    }));
-  }, [activeSession]);
+
+    const isLuisjaChat = hasLuisjaParticipant(
+      activeSession.metadata.participants,
+      activeSession.messages
+    );
+
+    return activeSession.messages.map((m) => {
+      const isOutgoing = isMessageOutgoing(
+        m.sender,
+        activeSession.metadata.participants,
+        activeSession.currentUser,
+        isLuisjaChat
+      );
+
+      return {
+        ...m,
+        isOutgoing: !m.isSystem && isOutgoing,
+        isStarred: starredSet.has(m.id),
+        isPinned: pinnedSet.has(m.id),
+      };
+    });
+  }, [activeSession, starredSet, pinnedSet]);
+
+  const pinnedMessages = useMemo(() => {
+    return adjustedMessages.filter((m) => m.isPinned);
+  }, [adjustedMessages]);
 
   // Consecutive audio autoplay handler (strictly chronological in real conversation)
   const handleAudioEnded = (endedMessageId: string) => {
@@ -784,6 +862,15 @@ export default function App() {
               />
             )}
 
+            {/* Pinned Messages Bar (Banner de fijados similar a WhatsApp) */}
+            {pinnedMessages.length > 0 && (
+              <PinnedMessagesBar
+                pinnedMessages={pinnedMessages}
+                onJumpToMessage={goToMessage}
+                onUnpinMessage={handleTogglePin}
+              />
+            )}
+
             {/* Conversation Stream (Always shows the real full conversation in context) */}
             <div className="flex-1 relative overflow-hidden bg-[#0b141a]">
               {/* Subtle WhatsApp Wallpaper background */}
@@ -847,6 +934,8 @@ export default function App() {
                             setActiveMedia({ attachment, caption, sender, dateStr, messageId });
                           }}
                           onJumpToMessage={goToMessage}
+                          onToggleStar={handleToggleStar}
+                          onTogglePin={handleTogglePin}
                           isPlayingAudio={activePlayingAudioId === msg.id}
                           audioPlaybackRate={audioPlaybackRate}
                           onPlayAudio={() => handlePlayAudio(msg.id)}
@@ -908,6 +997,8 @@ export default function App() {
               onJumpToMessage={(msgId) => {
                 goToMessage(msgId, activeSession.id);
               }}
+              onToggleStar={handleToggleStar}
+              onTogglePin={handleTogglePin}
               audioPlaybackRate={audioPlaybackRate}
               onChangeAudioRate={handleChangeAudioRate}
             />

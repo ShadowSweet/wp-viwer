@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   CheckCheck,
   FileText,
@@ -9,11 +9,15 @@ import {
   Film,
   CornerUpRight,
   CircleDashed,
+  Star,
+  Pin,
+  ChevronDown,
 } from 'lucide-react';
 import { Attachment, Message } from '../types/chat';
 import { AudioPlayer } from './AudioPlayer';
 import { renderFormattedText } from '../utils/textFormatter';
 import { formatBytes } from '../utils/dateUtils';
+import { formatParticipantName } from '../utils/participantUtils';
 
 interface MessageItemProps {
   message: Message;
@@ -31,6 +35,8 @@ interface MessageItemProps {
     messageId?: string
   ) => void;
   onJumpToMessage?: (messageId: string) => void;
+  onToggleStar?: (messageId: string) => void;
+  onTogglePin?: (messageId: string) => void;
   // Audio playback coordination props
   isPlayingAudio?: boolean;
   audioPlaybackRate?: number;
@@ -71,6 +77,8 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
   isHighlighted = false,
   onOpenMedia,
   onJumpToMessage,
+  onToggleStar,
+  onTogglePin,
   isPlayingAudio = false,
   audioPlaybackRate = 1,
   onPlayAudio,
@@ -80,6 +88,20 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
 }) => {
   const isOutgoing = message.isOutgoing;
   const hasAttachment = !!message.attachment;
+
+  const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    window.addEventListener('click', handleOutsideClick);
+    return () => window.removeEventListener('click', handleOutsideClick);
+  }, [showMenu]);
 
   // View-once photo detection (Foto para ver una sola vez)
   const isViewOnce = message.isViewOnce || message.text === 'Foto para ver una sola vez';
@@ -114,7 +136,8 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
   }
 
   // Header showing sender name on the FIRST bubble of consecutive messages
-  const senderHeader = isFirstInGroup && message.sender ? (
+  const formattedSender = formatParticipantName(message.sender);
+  const senderHeader = isFirstInGroup && formattedSender ? (
     <div
       className={`mb-1 px-1 select-none flex items-center ${
         isOutgoing ? 'justify-end' : 'justify-start'
@@ -125,7 +148,7 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
           message.sender
         )}`}
       >
-        {message.sender}
+        {formattedSender}
       </span>
     </div>
   ) : null;
@@ -201,6 +224,59 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
           }`}
         >
           <div className="relative group max-w-[160px] sm:max-w-[200px]">
+            {/* Options menu trigger for stickers */}
+            <div className="absolute top-1 right-1 z-30 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMenu((prev) => !prev);
+                }}
+                className="p-1 rounded-full bg-black/60 hover:bg-black/80 text-white/80 hover:text-white transition cursor-pointer shadow-md"
+                title="Opciones del sticker"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {showMenu && (
+                <div
+                  ref={menuRef}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`absolute ${isOutgoing ? 'right-0' : 'left-0'} top-7 z-50 min-w-[195px] bg-[#233138] border border-neutral-700/80 rounded-xl shadow-2xl py-1 text-xs text-[#e9edef] animate-in fade-in zoom-in-95 duration-100 select-none`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onToggleStar?.(message.id);
+                      setShowMenu(false);
+                    }}
+                    className="w-full px-3.5 py-2.5 text-left hover:bg-[#182229] flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Star
+                      className={`w-4 h-4 shrink-0 ${
+                        message.isStarred ? 'text-[#ffc107] fill-[#ffc107]' : 'text-[#8696a0]'
+                      }`}
+                    />
+                    <span>{message.isStarred ? 'Quitar de destacados' : '⭐ Destacar mensaje'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onTogglePin?.(message.id);
+                      setShowMenu(false);
+                    }}
+                    className="w-full px-3.5 py-2.5 text-left hover:bg-[#182229] flex items-center gap-2.5 transition-colors cursor-pointer"
+                  >
+                    <Pin
+                      className={`w-4 h-4 shrink-0 ${
+                        message.isPinned ? 'text-[#00a884] fill-[#00a884]' : 'text-[#8696a0]'
+                      }`}
+                    />
+                    <span>{message.isPinned ? 'Desfijar mensaje' : '📌 Fijar mensaje'}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
             {message.isForwarded && (
               <div className="flex items-center gap-1 text-[11px] text-[#8696a0] italic mb-1 select-none font-normal">
                 <CornerUpRight className="w-3 h-3 text-[#8696a0]" />
@@ -226,6 +302,12 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
             />
             {/* WhatsApp time overlay for sticker */}
             <div className="absolute bottom-1 right-2 bg-black/60 backdrop-blur-xs px-1.5 py-0.5 rounded text-[10px] text-white/95 flex items-center gap-1.5 shadow-xs pointer-events-none">
+              {message.isStarred && (
+                <Star className="w-2.5 h-2.5 text-[#ffc107] fill-[#ffc107] shrink-0" />
+              )}
+              {message.isPinned && (
+                <Pin className="w-2.5 h-2.5 text-[#00a884] fill-[#00a884] shrink-0" />
+              )}
               {message.isEdited && <span className="text-[9.5px] opacity-80 italic">editado</span>}
               <span>{message.rawTime}</span>
               {isOutgoing && <CheckCheck className="w-3 h-3 text-[#53bdeb]" />}
@@ -246,7 +328,11 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
         } group transition-colors`}
       >
         <div
-          className={`relative max-w-[88%] sm:max-w-[75%] md:max-w-[65%] lg:max-w-[55%] rounded-lg px-2.5 py-1.5 shadow-xs text-[14px] leading-relaxed break-words overflow-hidden transition-all duration-300 ${
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setShowMenu(true);
+          }}
+          className={`relative max-w-[88%] sm:max-w-[75%] md:max-w-[65%] lg:max-w-[55%] rounded-lg px-2.5 py-1.5 shadow-xs text-[14px] leading-relaxed break-words overflow-visible transition-all duration-300 group/bubble ${
             isHighlighted
               ? 'ring-3 ring-emerald-400 ring-offset-2 ring-offset-[#0b141a] scale-[1.01] shadow-2xl brightness-110'
               : isSearchResult
@@ -258,6 +344,63 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
               : 'bg-[#202c33] text-[#e9edef] rounded-tl-xs'
           }`}
         >
+          {/* Action Menu (⭐ Destacar, 📌 Fijar) */}
+          <div className="absolute top-1.5 right-1.5 z-30 opacity-0 group-hover/bubble:opacity-100 focus-within:opacity-100 transition-opacity">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenu((prev) => !prev);
+              }}
+              title="Opciones del mensaje"
+              aria-label="Opciones del mensaje"
+              className="p-1 rounded-full bg-black/40 hover:bg-black/70 text-[#8696a0] hover:text-white transition shadow-sm cursor-pointer"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Dropdown Menu */}
+            {showMenu && (
+              <div
+                ref={menuRef}
+                onClick={(e) => e.stopPropagation()}
+                className={`absolute ${isOutgoing ? 'right-0' : 'left-0'} top-7 z-50 min-w-[195px] bg-[#233138] border border-neutral-700/80 rounded-xl shadow-2xl py-1 text-xs text-[#e9edef] animate-in fade-in zoom-in-95 duration-100 select-none`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggleStar?.(message.id);
+                    setShowMenu(false);
+                  }}
+                  className="w-full px-3.5 py-2.5 text-left hover:bg-[#182229] flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <Star
+                    className={`w-4 h-4 shrink-0 ${
+                      message.isStarred ? 'text-[#ffc107] fill-[#ffc107]' : 'text-[#8696a0]'
+                    }`}
+                  />
+                  <span>{message.isStarred ? 'Quitar de destacados' : '⭐ Destacar mensaje'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onTogglePin?.(message.id);
+                    setShowMenu(false);
+                  }}
+                  className="w-full px-3.5 py-2.5 text-left hover:bg-[#182229] flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <Pin
+                    className={`w-4 h-4 shrink-0 ${
+                      message.isPinned ? 'text-[#00a884] fill-[#00a884]' : 'text-[#8696a0]'
+                    }`}
+                  />
+                  <span>{message.isPinned ? 'Desfijar mensaje' : '📌 Fijar mensaje'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Tail indicator for first in group */}
           {isFirstInGroup && (
             <div
@@ -294,7 +437,7 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
               title={message.replyTo.targetMessageId ? 'Ver mensaje original citado' : undefined}
             >
               <div className="text-[11.5px] font-semibold text-[#00a884] truncate">
-                {message.replyTo.sender || 'Mensaje citado'}
+                {formatParticipantName(message.replyTo.sender || '') || 'Mensaje citado'}
               </div>
               <p className="text-[11px] text-[#8696a0] truncate font-normal">
                 {message.replyTo.text}
@@ -513,6 +656,16 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
 
           {/* Message Timestamp & Checkmarks */}
           <div className="float-right ml-2.5 -mb-0.5 flex items-center gap-1.5 text-[11px] text-[#8696a0] select-none">
+            {message.isStarred && (
+              <span title="Mensaje destacado">
+                <Star className="w-3 h-3 text-[#ffc107] fill-[#ffc107] inline-block shrink-0" />
+              </span>
+            )}
+            {message.isPinned && (
+              <span title="Mensaje fijado">
+                <Pin className="w-3 h-3 text-[#00a884] fill-[#00a884] inline-block shrink-0" />
+              </span>
+            )}
             {message.isEdited && (
               <span className="text-[10px] text-[#8696a0] italic font-normal tracking-tight">
                 editado
