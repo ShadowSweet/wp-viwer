@@ -34,6 +34,7 @@ export interface Message {
   replyTo?: {
     sender?: string;
     text?: string;
+    targetMessageId?: string;
   };
   isViewOnce?: boolean;
   isEdited?: boolean;
@@ -79,7 +80,15 @@ export interface ChatSession {
   metadata: ChatMetadata;
   messages: Message[];
   currentUser: string;
+  hasEverBeenOpened?: boolean;
   scrollPosition?: number;
+  lastVisibleMessageId?: string;
+  indices?: {
+    dateToFirstMessageId: Record<string, string>;
+    visualMediaIds: string[];
+    audioMediaIds: string[];
+    docMediaIds: string[];
+  };
   lastMessagePreview?: {
     sender: string;
     text: string;

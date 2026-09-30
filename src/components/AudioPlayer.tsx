@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Play, Pause, Mic, Volume2, AlertCircle } from 'lucide-react';
 import { Attachment } from '../types/chat';
+import { getPlayableAudioUrl } from '../utils/audioHelper';
 
 interface AudioPlayerProps {
   messageId: string;
@@ -28,9 +29,31 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   className,
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [audioSrc, setAudioSrc] = useState<string>(attachment.url);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(attachment.duration || 0);
   const [hasError, setHasError] = useState(false);
+
+  // Pre-load or convert playable audio URL if needed for Safari/iOS
+  useEffect(() => {
+    let isMounted = true;
+    setAudioSrc(attachment.url);
+    setHasError(false);
+
+    getPlayableAudioUrl(attachment)
+      .then((url) => {
+        if (isMounted && url) {
+          setAudioSrc(url);
+        }
+      })
+      .catch((err) => {
+        console.warn('Pre-fetching audio URL failed:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [attachment.url]);
 
   // Pseudo-waveform bar heights (WhatsApp style, 24 bars)
   const barHeights = React.useMemo(() => {
@@ -47,6 +70,37 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     return bars;
   }, [attachment.fileName]);
 
+  // Robust play function with fallback conversion for iOS / Safari
+  const executePlay = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    try {
+      audio.playbackRate = playbackRate;
+      await audio.play();
+      setHasError(false);
+    } catch (err) {
+      console.warn('Initial audio.play() failed, trying fallback conversion:', err);
+      try {
+        const fallbackUrl = await getPlayableAudioUrl(attachment);
+        if (fallbackUrl && audioRef.current) {
+          if (audioRef.current.src !== fallbackUrl) {
+            audioRef.current.src = fallbackUrl;
+            setAudioSrc(fallbackUrl);
+          }
+          audioRef.current.playbackRate = playbackRate;
+          await audioRef.current.play();
+          setHasError(false);
+          return;
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback audio play failed:', fallbackErr);
+      }
+      setHasError(true);
+      onPause?.();
+    }
+  };
+
   // Sync playback state with isPlaying prop
   useEffect(() => {
     const audio = audioRef.current;
@@ -55,15 +109,11 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     audio.playbackRate = playbackRate;
 
     if (isPlaying) {
-      audio.play().catch((err) => {
-        console.warn('Playback error:', err);
-        setHasError(true);
-        onPause?.();
-      });
+      executePlay();
     } else {
       audio.pause();
     }
-  }, [isPlaying, playbackRate, onPause]);
+  }, [isPlaying, playbackRate, audioSrc]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -84,7 +134,24 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
       onEnded?.();
     };
 
-    const handleError = () => {
+    const handleError = async () => {
+      // If error occurs, try fallback conversion once before giving up
+      if (audio.src === attachment.url) {
+        try {
+          const fallbackUrl = await getPlayableAudioUrl(attachment);
+          if (fallbackUrl && fallbackUrl !== attachment.url && audioRef.current) {
+            audioRef.current.src = fallbackUrl;
+            setAudioSrc(fallbackUrl);
+            setHasError(false);
+            if (isPlaying) {
+              audioRef.current.play().catch(() => setHasError(true));
+            }
+            return;
+          }
+        } catch {
+          // ignore
+        }
+      }
       setHasError(true);
       onPause?.();
     };
@@ -100,7 +167,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
     };
-  }, [attachment.url, onEnded, onPause]);
+  }, [attachment.url, isPlaying, onEnded, onPause]);
 
   const togglePlay = (e: React.MouseEvent | React.TouchEvent) => {
     e.stopPropagation();
@@ -152,7 +219,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
         className || 'w-full max-w-[260px] sm:max-w-[300px]'
       }`}
     >
-      <audio ref={audioRef} src={attachment.url} preload="metadata" />
+      <audio ref={audioRef} src={audioSrc} preload="metadata" />
 
       {hasError ? (
         <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-950/40 p-2.5 rounded-lg border border-amber-500/20">

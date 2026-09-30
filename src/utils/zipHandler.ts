@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { Attachment, ChatMetadata, ChatSession, MediaType, Message } from '../types/chat';
 import { buildMessagesWithAttachments, cleanText, detectMediaType, parseChatRawLines } from './whatsappParser';
+import { normalizeDateToYMD } from './dateUtils';
 
 export interface ParseProgress {
   step: 'reading' | 'unzipping' | 'detecting' | 'processing_media' | 'parsing_chat' | 'complete' | 'error';
@@ -439,6 +440,30 @@ export function createChatSessionFromData(
     }
   }
 
+  // Pre-compute lookup indices for instant date navigation and multimedia tabs
+  const dateToFirstMessageId: Record<string, string> = {};
+  const visualMediaIds: string[] = [];
+  const audioMediaIds: string[] = [];
+  const docMediaIds: string[] = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i];
+    const ymd = normalizeDateToYMD(m.rawDate);
+    if (!dateToFirstMessageId[ymd]) {
+      dateToFirstMessageId[ymd] = m.id;
+    }
+    if (m.attachment) {
+      const type = m.attachment.mediaType;
+      if (type === 'image' || type === 'video' || type === 'gif' || type === 'sticker') {
+        visualMediaIds.push(m.id);
+      } else if (type === 'audio' || type === 'voice') {
+        audioMediaIds.push(m.id);
+      } else if (type === 'document') {
+        docMediaIds.push(m.id);
+      }
+    }
+  }
+
   return {
     id,
     title,
@@ -446,6 +471,13 @@ export function createChatSessionFromData(
     metadata,
     messages,
     currentUser,
+    hasEverBeenOpened: false,
+    indices: {
+      dateToFirstMessageId,
+      visualMediaIds,
+      audioMediaIds,
+      docMediaIds,
+    },
     objectUrls,
     lastMessagePreview: lastMsg
       ? {

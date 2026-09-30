@@ -30,6 +30,7 @@ interface MessageItemProps {
     dateStr?: string,
     messageId?: string
   ) => void;
+  onJumpToMessage?: (messageId: string) => void;
   // Audio playback coordination props
   isPlayingAudio?: boolean;
   audioPlaybackRate?: number;
@@ -60,7 +61,7 @@ function getSenderColor(name: string): string {
   return SENDER_COLORS[index];
 }
 
-export const MessageItem: React.FC<MessageItemProps> = ({
+export const MessageItem: React.FC<MessageItemProps> = React.memo(({
   message,
   isFirstInGroup,
   isLastInGroup: _isLastInGroup,
@@ -69,6 +70,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
   isSearchResult,
   isHighlighted = false,
   onOpenMedia,
+  onJumpToMessage,
   isPlayingAudio = false,
   audioPlaybackRate = 1,
   onPlayAudio,
@@ -272,6 +274,31 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             <div className="flex items-center gap-1 text-[11px] text-[#8696a0] italic mb-1.5 select-none font-normal">
               <CornerUpRight className="w-3.5 h-3.5 text-[#8696a0] stroke-[2.2]" />
               <span>Reenviado</span>
+            </div>
+          )}
+
+          {/* Quoted Message / Reply Reference (Citas / quotes) */}
+          {message.replyTo && (
+            <div
+              className={`mb-2 rounded bg-black/25 border-l-[3.5px] border-[#00a884] p-1.5 sm:p-2 overflow-hidden select-none ${
+                message.replyTo.targetMessageId && onJumpToMessage
+                  ? 'cursor-pointer hover:bg-black/35 active:scale-[0.99] transition'
+                  : ''
+              }`}
+              onClick={(e) => {
+                if (message.replyTo?.targetMessageId && onJumpToMessage) {
+                  e.stopPropagation();
+                  onJumpToMessage(message.replyTo.targetMessageId);
+                }
+              }}
+              title={message.replyTo.targetMessageId ? 'Ver mensaje original citado' : undefined}
+            >
+              <div className="text-[11.5px] font-semibold text-[#00a884] truncate">
+                {message.replyTo.sender || 'Mensaje citado'}
+              </div>
+              <p className="text-[11px] text-[#8696a0] truncate font-normal">
+                {message.replyTo.text}
+              </p>
             </div>
           )}
 
@@ -500,4 +527,4 @@ export const MessageItem: React.FC<MessageItemProps> = ({
       </div>
     </div>
   );
-};
+});

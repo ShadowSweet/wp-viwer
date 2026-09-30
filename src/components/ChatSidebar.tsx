@@ -28,7 +28,7 @@ interface ChatSidebarProps {
   loadingCount: number;
 }
 
-export const ChatSidebar: React.FC<ChatSidebarProps> = ({
+export const ChatSidebar: React.FC<ChatSidebarProps> = React.memo(({
   sessions,
   activeSessionId,
   onSelectSession,
@@ -119,7 +119,7 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`h-full w-full md:w-72 lg:w-80 xl:w-96 bg-[#111b21] border-r border-neutral-800 flex flex-col select-none relative transition-colors ${
+      className={`h-full w-full bg-[#111b21] flex flex-col select-none relative transition-colors ${
         isDragOver ? 'ring-2 ring-emerald-500 bg-emerald-950/20' : ''
       }`}
     >
@@ -367,4 +367,4 @@ export const ChatSidebar: React.FC<ChatSidebarProps> = ({
       )}
     </aside>
   );
-};
+});

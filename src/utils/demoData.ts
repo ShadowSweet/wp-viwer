@@ -369,6 +369,11 @@ export function generateDemoChat(): { messages: Message[]; metadata: ChatMetadat
       isSystem: false,
       isOutgoing: true,
       isEdited: true,
+      replyTo: {
+        sender: 'Carlos Mendoza',
+        text: '¡Listísimo! ¡Nos vemos en media hora!',
+        targetMessageId: 'demo-msg-11',
+      },
     },
     {
       id: 'demo-msg-12b',

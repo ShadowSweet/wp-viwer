@@ -17,6 +17,12 @@ import { ChatInfoDrawer } from './components/ChatInfoDrawer';
 import { WhatsAppBackground } from './components/WhatsAppBackground';
 import { DatePickerModal } from './components/DatePickerModal';
 import { EmptyChatState } from './components/EmptyChatState';
+import { PanelResizer } from './components/PanelResizer';
+
+const DEFAULT_SIDEBAR_WIDTH = 380;
+const MIN_SIDEBAR_WIDTH = 280;
+const MAX_SIDEBAR_WIDTH = 600;
+const MIN_CHAT_WIDTH = 360;
 
 export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -50,10 +56,158 @@ export default function App() {
   // Scroll state & positions preservation map (ChatId -> scrollTop)
   const chatScrollContainerRef = useRef<HTMLDivElement | null>(null);
   const scrollPositions = useRef<Map<string, number>>(new Map());
+  // Track opened sessions to ensure each chat opens from the very beginning (first message) on first view
+  const openedSessionsRef = useRef<Set<string>>(new Set());
+  // Flag to avoid resetting scroll when jumping intentionally (search, date, media "ver en el chat", quotes)
+  const isIntentionalNavRef = useRef<boolean>(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
 
   const fileInputMainRef = useRef<HTMLInputElement | null>(null);
+
+  // Ultra-performant resizable panels state & DOM references
+  const appContainerRef = useRef<HTMLDivElement | null>(null);
+  const sidebarWidthRef = useRef<number>((() => {
+    try {
+      const saved = localStorage.getItem('whatsapp_viewer_sidebar_width');
+      if (saved) {
+        const val = parseFloat(saved);
+        if (!isNaN(val) && val >= MIN_SIDEBAR_WIDTH && val <= MAX_SIDEBAR_WIDTH) {
+          return val;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_SIDEBAR_WIDTH;
+  })());
+
+  const [isDesktop, setIsDesktop] = useState(
+    () => typeof window !== 'undefined' && window.innerWidth >= 1024
+  );
+
+  // Sync initial CSS variable on root container on mount
+  useEffect(() => {
+    if (appContainerRef.current) {
+      appContainerRef.current.style.setProperty(
+        '--sidebar-width',
+        `${sidebarWidthRef.current}px`
+      );
+    }
+  }, []);
+
+  // Sync isDesktop state and clamp width when window is resized
+  useEffect(() => {
+    const handleResize = () => {
+      const desktop = window.innerWidth >= 1024;
+      setIsDesktop(desktop);
+      if (desktop && appContainerRef.current) {
+        const maxAllowed = Math.max(
+          MIN_SIDEBAR_WIDTH,
+          Math.min(MAX_SIDEBAR_WIDTH, window.innerWidth - MIN_CHAT_WIDTH)
+        );
+        const clamped = Math.max(
+          MIN_SIDEBAR_WIDTH,
+          Math.min(maxAllowed, sidebarWidthRef.current)
+        );
+        sidebarWidthRef.current = clamped;
+        appContainerRef.current.style.setProperty('--sidebar-width', `${clamped}px`);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Resizing drag interaction - ZERO React re-renders, rAF-throttled CSS variable updates
+  const handleStartResize = useCallback((e: React.MouseEvent | React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const container = appContainerRef.current;
+    if (!container) return;
+
+    // Immediately tag container to disable transitions and text selection directly via CSS
+    container.setAttribute('data-resizing', 'true');
+    const prevCursor = document.body.style.cursor;
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    let rafId: number | null = null;
+    let latestX = e.clientX;
+
+    const applyWidth = () => {
+      if (appContainerRef.current) {
+        const maxAllowed = Math.max(
+          MIN_SIDEBAR_WIDTH,
+          Math.min(MAX_SIDEBAR_WIDTH, window.innerWidth - MIN_CHAT_WIDTH)
+        );
+        const clamped = Math.max(MIN_SIDEBAR_WIDTH, Math.min(maxAllowed, latestX));
+        sidebarWidthRef.current = clamped;
+        appContainerRef.current.style.setProperty('--sidebar-width', `${clamped}px`);
+      }
+      rafId = null;
+    };
+
+    const onPointerMove = (moveEvent: PointerEvent | MouseEvent) => {
+      latestX = moveEvent.clientX;
+      if (rafId === null) {
+        rafId = requestAnimationFrame(applyWidth);
+      }
+    };
+
+    const onPointerEnd = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        applyWidth(); // Ensure the final position is flushed to CSS
+      }
+
+      if (appContainerRef.current) {
+        appContainerRef.current.removeAttribute('data-resizing');
+      }
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevUserSelect;
+
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerEnd);
+      window.removeEventListener('pointercancel', onPointerEnd);
+      window.removeEventListener('mousemove', onPointerMove);
+      window.removeEventListener('mouseup', onPointerEnd);
+
+      // Persist final width in localStorage ONLY when drag ends
+      try {
+        localStorage.setItem('whatsapp_viewer_sidebar_width', sidebarWidthRef.current.toString());
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerup', onPointerEnd);
+    window.addEventListener('pointercancel', onPointerEnd);
+    window.addEventListener('mousemove', onPointerMove);
+    window.addEventListener('mouseup', onPointerEnd);
+  }, []);
+
+  const handleResetSidebarWidth = useCallback(() => {
+    const maxAllowed = Math.max(
+      MIN_SIDEBAR_WIDTH,
+      Math.min(MAX_SIDEBAR_WIDTH, window.innerWidth - MIN_CHAT_WIDTH)
+    );
+    const defaultClamped = Math.max(
+      MIN_SIDEBAR_WIDTH,
+      Math.min(maxAllowed, DEFAULT_SIDEBAR_WIDTH)
+    );
+    sidebarWidthRef.current = defaultClamped;
+    if (appContainerRef.current) {
+      appContainerRef.current.style.setProperty('--sidebar-width', `${defaultClamped}px`);
+    }
+    try {
+      localStorage.setItem('whatsapp_viewer_sidebar_width', defaultClamped.toString());
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Audio coordination state for consecutive audio autoplay
   const [activePlayingAudioId, setActivePlayingAudioId] = useState<string | null>(null);
@@ -163,10 +317,47 @@ export default function App() {
     setIsInfoOpen(false);
   }, [activeSessionId]);
 
-  // Save scroll position of current chat before switching, and restore scroll position of target chat
+  // Initial scroll effect for active chat:
+  // When opened for the first time, ALWAYS start from the beginning (first message, scrollTop = 0)
+  // When intentional navigation is occurring (search, date picker, chat info, quotes), do not override
+  useEffect(() => {
+    if (!activeSessionId) return;
+    if (isIntentionalNavRef.current) return;
+
+    const isFirstOpen = !openedSessionsRef.current.has(activeSessionId);
+    openedSessionsRef.current.add(activeSessionId);
+
+    const applyInitialScroll = () => {
+      if (isIntentionalNavRef.current) return;
+      const container = chatScrollContainerRef.current;
+      if (container) {
+        if (isFirstOpen) {
+          // 1. ABRIR SIEMPRE DESDE EL PRINCIPIO:
+          // Position at the very first message of the conversation
+          container.scrollTop = 0;
+        } else {
+          // For chats already visited during current session, restore reading position
+          const savedScroll = scrollPositions.current.get(activeSessionId);
+          container.scrollTop = savedScroll !== undefined ? savedScroll : 0;
+        }
+      }
+    };
+
+    applyInitialScroll();
+    const timer = setTimeout(applyInitialScroll, 40);
+    return () => clearTimeout(timer);
+  }, [activeSessionId]);
+
+  // Save scroll position of current chat before switching, and restore scroll position or open from top
   const handleSelectSession = useCallback(
     (newId: string) => {
-      if (newId === activeSessionId) return;
+      if (newId === activeSessionId) {
+        // Clicking the currently active chat in sidebar scrolls smoothly to top
+        if (!isIntentionalNavRef.current) {
+          scrollToTop();
+        }
+        return;
+      }
 
       // 1. Save scroll position of outgoing chat
       if (chatScrollContainerRef.current && activeSessionId) {
@@ -176,21 +367,27 @@ export default function App() {
         );
       }
 
+      const isFirstOpen = !openedSessionsRef.current.has(newId);
+      openedSessionsRef.current.add(newId);
+
       // 2. Switch chat
       setActiveSessionId(newId);
 
-      // 3. Restore scroll position of incoming chat
-      setTimeout(() => {
-        const container = chatScrollContainerRef.current;
-        if (container) {
-          const savedScroll = scrollPositions.current.get(newId);
-          if (savedScroll !== undefined) {
-            container.scrollTop = savedScroll;
-          } else {
-            container.scrollTop = container.scrollHeight;
+      // 3. For normal chat opening from sidebar, set scroll position
+      if (!isIntentionalNavRef.current) {
+        setTimeout(() => {
+          const container = chatScrollContainerRef.current;
+          if (container) {
+            if (isFirstOpen) {
+              // ALWAYS open at the very beginning (first message / messageIndex = 0)
+              container.scrollTop = 0;
+            } else {
+              const savedScroll = scrollPositions.current.get(newId);
+              container.scrollTop = savedScroll !== undefined ? savedScroll : 0;
+            }
           }
-        }
-      }, 50);
+        }, 40);
+      }
     },
     [activeSessionId]
   );
@@ -198,15 +395,18 @@ export default function App() {
   /**
    * CENTRALIZED "IR AL MENSAJE" (goToMessage)
    * Navigates seamlessly to any message in the full conversation:
-   * 1. Identifies chat and switches if needed
-   * 2. Closes any blocking modal/drawer (lightbox, chat info)
-   * 3. Locates message in DOM
-   * 4. Scrolls smoothly and centers it in view
-   * 5. Applies temporary visual highlight that auto-fades
-   * 6. Preserves full conversation context so user can continue scrolling freely
+   * 1. Sets intentional navigation flag so default top scroll does not override
+   * 2. Identifies chat and switches if needed
+   * 3. Closes any blocking modal/drawer (lightbox, chat info)
+   * 4. Locates message in DOM
+   * 5. Scrolls smoothly and centers it in view
+   * 6. Applies temporary visual highlight that auto-fades
+   * 7. Preserves full conversation context so user can continue scrolling freely
    */
   const goToMessage = useCallback(
     (messageId: string, targetSessionId?: string) => {
+      isIntentionalNavRef.current = true;
+
       // 1. Switch chat session if target differs
       if (targetSessionId && targetSessionId !== activeSessionId) {
         handleSelectSession(targetSessionId);
@@ -225,13 +425,24 @@ export default function App() {
         setHighlightedMessageId(null);
       }, 3500);
 
-      // 4. Scroll smoothly to the message element
-      setTimeout(() => {
+      // 4. Scroll smoothly to the message element with retry
+      const attemptScroll = (retries = 6) => {
         const el = document.getElementById(messageId);
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          setTimeout(() => {
+            isIntentionalNavRef.current = false;
+          }, 600);
+        } else if (retries > 0) {
+          setTimeout(() => attemptScroll(retries - 1), 60);
+        } else {
+          isIntentionalNavRef.current = false;
         }
-      }, 80);
+      };
+
+      setTimeout(() => {
+        attemptScroll();
+      }, 60);
     },
     [activeSessionId, handleSelectSession]
   );
@@ -276,6 +487,7 @@ export default function App() {
 
   // Navigate to a specific date from Date Picker
   const handleNavigateToDate = (targetYMD: string) => {
+    isIntentionalNavRef.current = true;
     const dateSepEl = document.getElementById(`date-sep-${targetYMD}`);
     if (dateSepEl) {
       dateSepEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -286,6 +498,9 @@ export default function App() {
           badge.classList.remove('ring-4', 'ring-[#00a884]', 'bg-[#00a884]/40', 'text-white', 'scale-105');
         }, 2500);
       }
+      setTimeout(() => {
+        isIntentionalNavRef.current = false;
+      }, 600);
       return;
     }
 
@@ -294,6 +509,8 @@ export default function App() {
     );
     if (targetMsg) {
       goToMessage(targetMsg.id);
+    } else {
+      isIntentionalNavRef.current = false;
     }
   };
 
@@ -339,12 +556,16 @@ export default function App() {
           return [...prev, newSession];
         });
 
+        openedSessionsRef.current.add(newSession.id);
         // Set active session to the newly loaded chat
         setActiveSessionId(newSession.id);
 
         setTimeout(() => {
-          scrollToBottom(false);
-        }, 120);
+          const container = chatScrollContainerRef.current;
+          if (container) {
+            container.scrollTop = 0;
+          }
+        }, 50);
       } catch (err) {
         console.error(`Error loading chat ZIP "${file.name}":`, err);
       } finally {
@@ -403,10 +624,14 @@ export default function App() {
         return [demoSession, ...filtered];
       });
 
+      openedSessionsRef.current.add(demoSession.id);
       setActiveSessionId(demoSession.id);
       setTimeout(() => {
-        scrollToBottom(false);
-      }, 100);
+        const container = chatScrollContainerRef.current;
+        if (container) {
+          container.scrollTop = 0;
+        }
+      }, 50);
     } catch (err) {
       console.error('Error loading demo chat:', err);
     }
@@ -471,7 +696,13 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-full overflow-hidden bg-[#0c1317] text-[#e9edef] font-sans select-none relative">
+    <div
+      ref={appContainerRef}
+      style={{
+        '--sidebar-width': `${sidebarWidthRef.current}px`,
+      } as React.CSSProperties}
+      className="flex h-[100dvh] max-h-[100dvh] w-full max-w-full overflow-hidden bg-[#0c1317] text-[#e9edef] font-sans select-none relative [&[data-resizing=true]]:select-none [&[data-resizing=true]_*]:transition-none!"
+    >
       {/* Hidden file input for adding chats */}
       <input
         type="file"
@@ -487,9 +718,14 @@ export default function App() {
 
       {/* LEFT COLUMN: Sidebar Chat List */}
       <div
+        style={{
+          width: isDesktop ? 'var(--sidebar-width)' : undefined,
+          minWidth: isDesktop ? 'var(--sidebar-width)' : undefined,
+          maxWidth: isDesktop ? 'var(--sidebar-width)' : undefined,
+        }}
         className={`${
           activeSessionId ? 'hidden lg:flex' : 'flex'
-        } w-full lg:w-[360px] xl:w-[400px] shrink-0 flex-col h-full border-r border-neutral-800 bg-[#111b21] z-20 transition-all`}
+        } w-full shrink-0 flex-col h-full bg-[#111b21] z-20`}
       >
         <ChatSidebar
           sessions={sessions}
@@ -501,6 +737,12 @@ export default function App() {
           loadingCount={loadingCount}
         />
       </div>
+
+      {/* INTERACTIVE RESIZER DIVIDER (Visible on desktop & tablet landscape) */}
+      <PanelResizer
+        onMouseDown={handleStartResize}
+        onDoubleClick={handleResetSidebarWidth}
+      />
 
       {/* RIGHT COLUMN: Active Chat Conversation or Empty Welcome State */}
       <main
@@ -604,6 +846,7 @@ export default function App() {
                           onOpenMedia={(attachment, caption, sender, dateStr, messageId) => {
                             setActiveMedia({ attachment, caption, sender, dateStr, messageId });
                           }}
+                          onJumpToMessage={goToMessage}
                           isPlayingAudio={activePlayingAudioId === msg.id}
                           audioPlaybackRate={audioPlaybackRate}
                           onPlayAudio={() => handlePlayAudio(msg.id)}
