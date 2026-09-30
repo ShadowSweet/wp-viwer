@@ -471,7 +471,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0c1317] text-[#e9edef] font-sans select-none">
+    <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-full overflow-hidden bg-[#0c1317] text-[#e9edef] font-sans select-none relative">
       {/* Hidden file input for adding chats */}
       <input
         type="file"
@@ -488,8 +488,8 @@ export default function App() {
       {/* LEFT COLUMN: Sidebar Chat List */}
       <div
         className={`${
-          activeSessionId ? 'hidden md:flex' : 'flex'
-        } w-full md:w-[360px] lg:w-[400px] shrink-0 flex-col h-full border-r border-neutral-800 bg-[#111b21] z-20 transition-all`}
+          activeSessionId ? 'hidden lg:flex' : 'flex'
+        } w-full lg:w-[360px] xl:w-[400px] shrink-0 flex-col h-full border-r border-neutral-800 bg-[#111b21] z-20 transition-all`}
       >
         <ChatSidebar
           sessions={sessions}
@@ -505,7 +505,7 @@ export default function App() {
       {/* RIGHT COLUMN: Active Chat Conversation or Empty Welcome State */}
       <main
         className={`${
-          activeSessionId ? 'flex' : 'hidden md:flex'
+          activeSessionId ? 'flex' : 'hidden lg:flex'
         } flex-1 flex-col h-full relative overflow-hidden bg-[#0b141a] z-10 w-full min-w-0`}
       >
         {activeSession ? (
@@ -617,15 +617,15 @@ export default function App() {
                 )}
               </div>
 
-              {/* Floating Navigation Controls (Bottom Right - touch friendly) */}
-              <div className="absolute bottom-3 right-3 sm:bottom-6 sm:right-6 z-20 flex flex-col gap-2 pointer-events-auto">
+              {/* Floating Navigation Controls (Bottom Right - touch friendly with safe area spacing) */}
+              <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom,0px))] right-3 sm:right-6 z-20 flex flex-col gap-2 pointer-events-auto">
                 {showScrollTop && (
                   <button
                     type="button"
                     onClick={scrollToTop}
                     title="Volver al inicio del chat (↑)"
                     aria-label="Volver al inicio del chat"
-                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#202c33]/90 hover:bg-[#2a3942] text-[#8696a0] hover:text-[#00a884] shadow-xl border border-neutral-700/60 backdrop-blur-md transition active:scale-95 flex items-center justify-center group touch-manipulation cursor-pointer"
+                    className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-[#202c33]/90 hover:bg-[#2a3942] text-[#8696a0] hover:text-[#00a884] shadow-xl border border-neutral-700/60 backdrop-blur-md transition active:scale-95 flex items-center justify-center group touch-manipulation cursor-pointer"
                   >
                     <ArrowUp className="w-5 h-5 group-hover:scale-110 transition-transform" />
                   </button>
@@ -637,7 +637,7 @@ export default function App() {
                     onClick={() => scrollToBottom(true)}
                     title="Ir al final del chat (↓)"
                     aria-label="Ir al final del chat"
-                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#202c33]/90 hover:bg-[#2a3942] text-[#8696a0] hover:text-[#00a884] shadow-xl border border-neutral-700/60 backdrop-blur-md transition active:scale-95 flex items-center justify-center group touch-manipulation cursor-pointer"
+                    className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-[#202c33]/90 hover:bg-[#2a3942] text-[#8696a0] hover:text-[#00a884] shadow-xl border border-neutral-700/60 backdrop-blur-md transition active:scale-95 flex items-center justify-center group touch-manipulation cursor-pointer"
                   >
                     <ArrowDown className="w-5 h-5 group-hover:scale-110 transition-transform" />
                   </button>
@@ -665,6 +665,8 @@ export default function App() {
               onJumpToMessage={(msgId) => {
                 goToMessage(msgId, activeSession.id);
               }}
+              audioPlaybackRate={audioPlaybackRate}
+              onChangeAudioRate={handleChangeAudioRate}
             />
           </>
         ) : (

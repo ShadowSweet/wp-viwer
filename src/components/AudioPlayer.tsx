@@ -12,6 +12,7 @@ interface AudioPlayerProps {
   onPause?: () => void;
   onEnded?: () => void;
   onChangeRate?: (rate: number) => void;
+  className?: string;
 }
 
 export const AudioPlayer: React.FC<AudioPlayerProps> = ({
@@ -24,6 +25,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   onPause,
   onEnded,
   onChangeRate,
+  className,
 }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -61,7 +63,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     } else {
       audio.pause();
     }
-  }, [isPlaying, playbackRate]);
+  }, [isPlaying, playbackRate, onPause]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -100,7 +102,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     };
   }, [attachment.url, onEnded, onPause]);
 
-  const togglePlay = () => {
+  const togglePlay = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
     if (isPlaying) {
       onPause?.();
     } else {
@@ -109,6 +112,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    e.stopPropagation();
     const audio = audioRef.current;
     if (!audio || duration === 0) return;
 
@@ -143,32 +147,36 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const isVoice = attachment.mediaType === 'voice';
 
   return (
-    <div className="flex flex-col w-full max-w-[260px] sm:max-w-[300px] select-none py-1">
+    <div
+      className={`flex flex-col select-none py-1 ${
+        className || 'w-full max-w-[260px] sm:max-w-[300px]'
+      }`}
+    >
       <audio ref={audioRef} src={attachment.url} preload="metadata" />
 
       {hasError ? (
-        <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-950/40 p-2 rounded border border-amber-500/20">
+        <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-950/40 p-2.5 rounded-lg border border-amber-500/20">
           <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
-          <div className="flex-1">
-            <p className="font-medium text-[11px]">Audio no compatible con este navegador</p>
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-[11.5px]">No se puede reproducir este audio.</p>
             <a
               href={attachment.url}
               download={attachment.fileName}
-              className="text-emerald-400 underline hover:text-emerald-300 mt-1 inline-block text-[11px]"
+              className="text-emerald-400 underline hover:text-emerald-300 mt-0.5 inline-block text-[11px] truncate max-w-full"
             >
               Descargar {attachment.fileName}
             </a>
           </div>
         </div>
       ) : (
-        <div className="flex items-center gap-2.5 sm:gap-3">
-          {/* Big touch target Avatar / Play button */}
+        <div className="flex items-center gap-2.5 sm:gap-3 w-full">
+          {/* Big touch target Avatar / Play button (min 44×44px for touch convenience) */}
           <div className="relative shrink-0">
             <button
               type="button"
               onClick={togglePlay}
               aria-label={isPlaying ? 'Pausar audio' : 'Reproducir audio'}
-              className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition shadow-sm active:scale-95 cursor-pointer ${
+              className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center transition shadow-sm active:scale-95 cursor-pointer touch-manipulation ${
                 isOutgoing
                   ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
                   : 'bg-emerald-500 hover:bg-emerald-400 text-white'
@@ -187,11 +195,11 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
           {/* Waveform and progress */}
           <div className="flex-1 min-w-0 flex flex-col justify-center">
-            {/* Waveform Bars with generous touch padding */}
+            {/* Waveform Bars with touch padding */}
             <div
               onClick={handleSeek}
               onTouchStart={handleSeek}
-              className="h-8 flex items-center gap-[2.5px] cursor-pointer group py-1.5 touch-manipulation"
+              className="h-8 flex items-center gap-[2.5px] cursor-pointer group py-1.5 touch-manipulation w-full"
               title="Toca para avanzar o retroceder"
             >
               {barHeights.map((height, idx) => {
@@ -201,7 +209,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
                   <div
                     key={idx}
                     style={{ height: `${height}px` }}
-                    className={`w-[3px] rounded-full transition-colors ${
+                    className={`flex-1 min-w-[2px] max-w-[4px] rounded-full transition-colors ${
                       isPlayed
                         ? isOutgoing
                           ? 'bg-emerald-400'
@@ -215,17 +223,21 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
               })}
             </div>
 
-            {/* Time and Speed Control */}
+            {/* Time (elapsed / total) and Speed Control */}
             <div className="flex items-center justify-between text-[11px] text-[#8696a0] font-mono leading-none mt-0.5">
-              <span>{formatTime(currentTime > 0 ? currentTime : duration)}</span>
+              <span>
+                {currentTime > 0
+                  ? `${formatTime(currentTime)} / ${formatTime(duration)}`
+                  : formatTime(duration)}
+              </span>
 
-              {/* Speed Button (1×, 1.5×, 2×) */}
+              {/* Speed Button (1×, 1.5×, 2×) with comfortable touch padding */}
               <button
                 type="button"
                 onClick={cycleSpeed}
                 title="Cambiar velocidad de reproducción (1× / 1.5× / 2×)"
                 aria-label={`Velocidad de audio: ${playbackRate}×`}
-                className="text-[11px] font-sans font-bold px-2 py-0.5 rounded-full bg-black/30 hover:bg-black/50 text-emerald-300 border border-emerald-500/25 transition active:scale-95 touch-manipulation"
+                className="text-[11px] font-sans font-bold px-2.5 py-1 rounded-full bg-black/40 hover:bg-black/60 text-emerald-300 border border-emerald-500/30 transition active:scale-95 touch-manipulation cursor-pointer min-h-[26px]"
               >
                 {playbackRate === 1 ? '1×' : playbackRate === 1.5 ? '1.5×' : '2×'}
               </button>
