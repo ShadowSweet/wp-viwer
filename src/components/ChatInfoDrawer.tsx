@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   X,
   Users,
@@ -13,10 +13,13 @@ import {
   Star,
   Pin,
   ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+  Play,
 } from 'lucide-react';
 import { Attachment, ChatMetadata, Message } from '../types/chat';
 import { formatBytes } from '../utils/dateUtils';
-import { formatParticipantName } from '../utils/participantUtils';
+import { getDisplayName } from '../utils/participantUtils';
 import { AudioPlayer } from './AudioPlayer';
 
 interface ChatInfoDrawerProps {
@@ -55,6 +58,24 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
   // Independent audio playback state for ChatInfoDrawer
   const [activePlayingAudioId, setActivePlayingAudioId] = useState<string | null>(null);
 
+  // Progressive loading for media tabs to keep UI instantaneous
+  const [visibleAudioCount, setVisibleAudioCount] = useState(30);
+  const [visibleMediaCount, setVisibleMediaCount] = useState(30);
+  const [visibleDocsCount, setVisibleDocsCount] = useState(30);
+
+  // Horizontal tabs scroll & overflow management
+  const tabsContainerRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkTabsOverflow = useCallback(() => {
+    const el = tabsContainerRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    setCanScrollLeft(scrollLeft > 4);
+    setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4);
+  }, []);
+
   // Stop playback when drawer closes or when active tab changes
   useEffect(() => {
     if (!isOpen) {
@@ -65,6 +86,25 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
   useEffect(() => {
     setActivePlayingAudioId(null);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    checkTabsOverflow();
+    const el = tabsContainerRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', checkTabsOverflow, { passive: true });
+    window.addEventListener('resize', checkTabsOverflow);
+    return () => {
+      el.removeEventListener('scroll', checkTabsOverflow);
+      window.removeEventListener('resize', checkTabsOverflow);
+    };
+  }, [checkTabsOverflow, isOpen]);
+
+  useEffect(() => {
+    if (isOpen) {
+      checkTabsOverflow();
+    }
+  }, [activeTab, isOpen, checkTabsOverflow]);
 
   if (!isOpen) return null;
 
@@ -83,11 +123,11 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
   const starredMessages = messages.filter((m) => m.isStarred);
   const pinnedMessages = messages.filter((m) => m.isPinned);
 
-  // Compute message counts per participant
+  // Compute message counts per participant using central getDisplayName
   const participantStats = metadata.participants
     .map((name) => {
       const count = messages.filter((m) => !m.isSystem && m.sender === name).length;
-      return { name, displayName: formatParticipantName(name), count };
+      return { name, displayName: getDisplayName(name), count };
     })
     .sort((a, b) => b.count - a.count);
 
@@ -111,76 +151,109 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
         </button>
       </div>
 
-      {/* Navigation Tabs (Horizontal scrollable with touch manipulation) */}
-      <div className="flex border-b border-neutral-800 bg-[#111b21] px-2 text-xs font-medium shrink-0 overflow-x-auto scrollbar-none">
-        <button
-          type="button"
-          onClick={() => setActiveTab('info')}
-          className={`py-3 px-3.5 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] ${
-            activeTab === 'info'
-              ? 'border-[#00a884] text-[#00a884]'
-              : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
-          }`}
+      {/* Navigation Tabs (Single line with horizontal scroll & navigation arrows that only show on overflow) */}
+      <div className="relative border-b border-neutral-800 bg-[#111b21] flex items-center select-none overflow-hidden shrink-0">
+        {canScrollLeft && (
+          <button
+            type="button"
+            onClick={() => {
+              tabsContainerRef.current?.scrollBy({ left: -140, behavior: 'smooth' });
+            }}
+            aria-label="Desplazar pestañas hacia la izquierda"
+            title="Ver pestañas anteriores"
+            className="absolute left-0 top-0 bottom-0 z-20 px-1 bg-gradient-to-r from-[#111b21] via-[#111b21]/95 to-transparent text-[#8696a0] hover:text-white flex items-center justify-center transition cursor-pointer touch-manipulation min-w-[28px]"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+        )}
+
+        <div
+          ref={tabsContainerRef}
+          className="flex w-full overflow-x-auto scrollbar-none px-2 text-xs font-medium shrink-0 scroll-smooth items-center gap-0.5"
         >
-          General
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('media')}
-          className={`py-3 px-3.5 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] ${
-            activeTab === 'media'
-              ? 'border-[#00a884] text-[#00a884]'
-              : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
-          }`}
-        >
-          Fotos ({visualMedia.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('audio')}
-          className={`py-3 px-3.5 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] ${
-            activeTab === 'audio'
-              ? 'border-[#00a884] text-[#00a884]'
-              : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
-          }`}
-        >
-          Audios ({audioMedia.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('docs')}
-          className={`py-3 px-3.5 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] ${
-            activeTab === 'docs'
-              ? 'border-[#00a884] text-[#00a884]'
-              : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
-          }`}
-        >
-          Docs ({docMedia.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('starred')}
-          className={`py-3 px-3.5 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] flex items-center gap-1.5 ${
-            activeTab === 'starred'
-              ? 'border-[#00a884] text-[#00a884]'
-              : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
-          }`}
-        >
-          <Star className="w-3.5 h-3.5" />
-          <span>Destacados ({starredMessages.length})</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('pinned')}
-          className={`py-3 px-3.5 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] flex items-center gap-1.5 ${
-            activeTab === 'pinned'
-              ? 'border-[#00a884] text-[#00a884]'
-              : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
-          }`}
-        >
-          <Pin className="w-3.5 h-3.5" />
-          <span>Fijados ({pinnedMessages.length})</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('info')}
+            className={`py-3 px-3 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] shrink-0 ${
+              activeTab === 'info'
+                ? 'border-[#00a884] text-[#00a884]'
+                : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+            }`}
+          >
+            General
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('media')}
+            className={`py-3 px-3 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] shrink-0 ${
+              activeTab === 'media'
+                ? 'border-[#00a884] text-[#00a884]'
+                : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+            }`}
+          >
+            Fotos ({visualMedia.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('audio')}
+            className={`py-3 px-3 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] shrink-0 ${
+              activeTab === 'audio'
+                ? 'border-[#00a884] text-[#00a884]'
+                : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+            }`}
+          >
+            Audios ({audioMedia.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('docs')}
+            className={`py-3 px-3 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] shrink-0 ${
+              activeTab === 'docs'
+                ? 'border-[#00a884] text-[#00a884]'
+                : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+            }`}
+          >
+            Docs ({docMedia.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('starred')}
+            className={`py-3 px-3 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] shrink-0 flex items-center gap-1.5 ${
+              activeTab === 'starred'
+                ? 'border-[#00a884] text-[#00a884]'
+                : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+            }`}
+          >
+            <Star className="w-3.5 h-3.5" />
+            <span>Destacados ({starredMessages.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('pinned')}
+            className={`py-3 px-3 border-b-2 transition cursor-pointer whitespace-nowrap touch-manipulation min-h-[44px] shrink-0 flex items-center gap-1.5 ${
+              activeTab === 'pinned'
+                ? 'border-[#00a884] text-[#00a884]'
+                : 'border-transparent text-[#8696a0] hover:text-[#e9edef]'
+            }`}
+          >
+            <Pin className="w-3.5 h-3.5" />
+            <span>Fijados ({pinnedMessages.length})</span>
+          </button>
+        </div>
+
+        {canScrollRight && (
+          <button
+            type="button"
+            onClick={() => {
+              tabsContainerRef.current?.scrollBy({ left: 140, behavior: 'smooth' });
+            }}
+            aria-label="Desplazar pestañas hacia la derecha"
+            title="Ver más pestañas"
+            className="absolute right-0 top-0 bottom-0 z-20 px-1 bg-gradient-to-l from-[#111b21] via-[#111b21]/95 to-transparent text-[#8696a0] hover:text-white flex items-center justify-center transition cursor-pointer touch-manipulation min-w-[28px]"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {/* Tab Content */}
@@ -299,147 +372,208 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
             {visualMedia.length === 0 ? (
               <p className="text-center text-xs text-[#8696a0] py-8">No hay imágenes ni videos en este chat.</p>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                {visualMedia.map((m) => (
-                  <div
-                    key={m.id}
-                    className="relative aspect-square rounded-lg overflow-hidden bg-black/40 group border border-white/5 flex flex-col justify-between shadow-sm"
-                  >
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {visualMedia.slice(0, visibleMediaCount).map((m) => (
                     <div
-                      onClick={() => {
-                        if (m.attachment) {
-                          onSelectMedia(
-                            m.attachment,
-                            m.text,
-                            m.sender,
-                            `${m.rawDate} ${m.rawTime}`,
-                            m.id
-                          );
-                        }
-                      }}
-                      className="w-full h-full cursor-pointer overflow-hidden touch-manipulation"
-                      title="Toca para ver en pantalla completa"
+                      key={m.id}
+                      className="relative aspect-square rounded-lg overflow-hidden bg-black/40 group border border-white/5 flex flex-col justify-between shadow-sm"
                     >
-                      {m.attachment?.mediaType === 'video' ? (
-                        <video src={m.attachment.url} className="w-full h-full object-cover" />
-                      ) : (
-                        <img
-                          src={m.attachment?.url}
-                          alt=""
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                        />
-                      )}
-                      {m.attachment?.mediaType === 'video' && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
-                          <Film className="w-6 h-6 text-white" />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Bottom overlay with timestamp and "Ver en el chat" button */}
-                    <div className="absolute inset-x-0 bottom-0 p-1.5 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex items-center justify-between z-10">
-                      <span className="text-[10px] text-white/90 font-mono truncate max-w-[55%]">
-                        {m.rawTime}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onJumpToMessage(m.id);
+                      <div
+                        onClick={() => {
+                          if (m.attachment) {
+                            onSelectMedia(
+                              m.attachment,
+                              m.text,
+                              getDisplayName(m.sender),
+                              `${m.rawDate} ${m.rawTime}`,
+                              m.id
+                            );
+                          }
                         }}
-                        title="Ver en el chat"
-                        className="px-2 py-1 rounded bg-[#00a884] hover:bg-[#02906f] text-white text-[10.5px] font-semibold flex items-center gap-1 transition shadow-sm cursor-pointer active:scale-95 touch-manipulation min-h-[30px]"
+                        className="w-full h-full cursor-pointer overflow-hidden touch-manipulation"
+                        title="Toca para ver en pantalla completa"
                       >
-                        <MessageSquare className="w-3 h-3" />
-                        <span>Ver</span>
-                      </button>
+                        {m.attachment?.mediaType === 'video' ? (
+                          <video src={m.attachment.url} className="w-full h-full object-cover" />
+                        ) : (
+                          <img
+                            src={m.attachment?.url}
+                            alt=""
+                            loading="lazy"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                          />
+                        )}
+                        {m.attachment?.mediaType === 'video' && (
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+                            <Film className="w-6 h-6 text-white" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bottom overlay with timestamp and "Ver en el chat" button */}
+                      <div className="absolute inset-x-0 bottom-0 p-1.5 bg-gradient-to-t from-black/90 via-black/50 to-transparent flex items-center justify-between z-10">
+                        <span className="text-[10px] text-white/90 font-mono truncate max-w-[55%]">
+                          {m.rawTime}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onJumpToMessage(m.id);
+                          }}
+                          title="Ver en el chat"
+                          className="px-2 py-1 rounded bg-[#00a884] hover:bg-[#02906f] text-white text-[10.5px] font-semibold flex items-center gap-1 transition shadow-sm cursor-pointer active:scale-95 touch-manipulation min-h-[30px]"
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          <span>Ver</span>
+                        </button>
+                      </div>
                     </div>
+                  ))}
+                </div>
+
+                {visualMedia.length > visibleMediaCount && (
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleMediaCount((prev) => prev + 30)}
+                      className="px-4 py-2 rounded-lg bg-[#202c33] hover:bg-[#2a3942] text-xs font-medium text-[#00a884] border border-neutral-700/60 transition cursor-pointer active:scale-95"
+                    >
+                      Cargar más fotos y videos ({visualMedia.length - visibleMediaCount} restantes)
+                    </button>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </div>
         )}
 
-        {/* Audio Tab: Functional, playable audios with full player */}
+        {/* Audio Tab: Single Reusable Player + Progressive Loading (High-performance on Android & iOS) */}
         {activeTab === 'audio' && (
           <div className="space-y-3">
             {audioMedia.length === 0 ? (
               <p className="text-center text-xs text-[#8696a0] py-8">No hay audios en este chat.</p>
             ) : (
-              audioMedia.map((m) => {
-                if (!m.attachment) return null;
+              <>
+                {audioMedia.slice(0, visibleAudioCount).map((m) => {
+                  if (!m.attachment) return null;
 
-                const isCurrentPlaying = activePlayingAudioId === m.id;
+                  const isCurrentPlaying = activePlayingAudioId === m.id;
+                  const senderName = getDisplayName(m.sender);
 
-                return (
-                  <div
-                    key={m.id}
-                    className="p-3 sm:p-3.5 rounded-xl bg-[#202c33]/85 border border-neutral-700/60 shadow-md flex flex-col gap-2.5 transition hover:border-neutral-600"
-                  >
-                    {/* Top Row: Sender, Date/Time, and "Ver en el chat" button */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs sm:text-[13px] font-semibold text-[#e9edef] truncate">
-                          {m.sender}
-                        </p>
-                        <p className="text-[10.5px] sm:text-[11px] text-[#8696a0] font-mono mt-0.5">
-                          {m.rawDate} · {m.rawTime}
-                        </p>
+                  return (
+                    <div
+                      key={m.id}
+                      className="p-3 sm:p-3.5 rounded-xl bg-[#202c33]/85 border border-neutral-700/60 shadow-md flex flex-col gap-2.5 transition hover:border-neutral-600"
+                    >
+                      {/* Top Row: Sender, Date/Time, and "Ver en el chat" button */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs sm:text-[13px] font-semibold text-[#e9edef] truncate">
+                            {senderName}
+                          </p>
+                          <p className="text-[10.5px] sm:text-[11px] text-[#8696a0] font-mono mt-0.5">
+                            {m.rawDate} · {m.rawTime}
+                          </p>
+                        </div>
+
+                        {/* "Ver en el chat" button */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActivePlayingAudioId(null);
+                            onJumpToMessage(m.id);
+                          }}
+                          title="Ver este audio en la conversación"
+                          className="px-3 py-1.5 rounded-lg bg-[#00a884]/20 hover:bg-[#00a884]/30 text-emerald-400 text-xs font-semibold flex items-center gap-1.5 transition shrink-0 cursor-pointer active:scale-95 touch-manipulation min-h-[36px]"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>Ver en el chat</span>
+                        </button>
                       </div>
 
-                      {/* "Ver en el chat" button with generous touch target */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActivePlayingAudioId(null);
-                          onJumpToMessage(m.id);
-                        }}
-                        title="Ver este audio en la conversación"
-                        className="px-3 py-1.5 rounded-lg bg-[#00a884]/20 hover:bg-[#00a884]/30 text-emerald-400 text-xs font-semibold flex items-center gap-1.5 transition shrink-0 cursor-pointer active:scale-95 touch-manipulation min-h-[36px]"
-                      >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                        <span>Ver en el chat</span>
-                      </button>
-                    </div>
-
-                    {/* Middle: Functional Audio Player */}
-                    <div className="bg-[#111b21]/80 rounded-lg p-2.5 border border-white/5 w-full overflow-hidden">
-                      <AudioPlayer
-                        messageId={m.id}
-                        attachment={m.attachment}
-                        isPlaying={isCurrentPlaying}
-                        playbackRate={audioPlaybackRate}
-                        onPlay={() => setActivePlayingAudioId(m.id)}
-                        onPause={() => {
-                          if (activePlayingAudioId === m.id) {
-                            setActivePlayingAudioId(null);
-                          }
-                        }}
-                        onEnded={() => {
-                          if (activePlayingAudioId === m.id) {
-                            setActivePlayingAudioId(null);
-                          }
-                        }}
-                        onChangeRate={onChangeAudioRate}
-                        className="w-full max-w-full"
-                      />
-                    </div>
-
-                    {/* Bottom Row: Filename and file size */}
-                    <div className="flex items-center justify-between text-[10.5px] text-[#8696a0] font-mono px-0.5">
-                      <span className="truncate max-w-[70%]" title={m.attachment.fileName}>
-                        {m.attachment.fileName}
-                      </span>
-                      {m.attachment.size && (
-                        <span className="shrink-0 font-medium">
-                          {formatBytes(m.attachment.size)}
-                        </span>
+                      {/* Middle: Either active player (if playing) OR lightweight play card */}
+                      {isCurrentPlaying ? (
+                        <div className="bg-[#111b21]/80 rounded-lg p-2.5 border border-white/5 w-full overflow-hidden">
+                          <AudioPlayer
+                            messageId={m.id}
+                            attachment={m.attachment}
+                            isPlaying={true}
+                            playbackRate={audioPlaybackRate}
+                            onPlay={() => setActivePlayingAudioId(m.id)}
+                            onPause={() => {
+                              if (activePlayingAudioId === m.id) {
+                                setActivePlayingAudioId(null);
+                              }
+                            }}
+                            onEnded={() => {
+                              if (activePlayingAudioId === m.id) {
+                                setActivePlayingAudioId(null);
+                              }
+                            }}
+                            onChangeRate={onChangeAudioRate}
+                            className="w-full max-w-full"
+                          />
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => setActivePlayingAudioId(m.id)}
+                          className="bg-[#111b21]/60 hover:bg-[#111b21] rounded-lg p-2.5 border border-white/5 w-full flex items-center gap-3 cursor-pointer transition group"
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActivePlayingAudioId(m.id);
+                            }}
+                            aria-label="Reproducir audio"
+                            className="w-9 h-9 rounded-full bg-[#00a884] hover:bg-[#02906f] group-hover:scale-105 text-white flex items-center justify-center shrink-0 shadow-sm transition active:scale-95 touch-manipulation"
+                          >
+                            <Play className="w-4 h-4 ml-0.5 fill-current" />
+                          </button>
+                          <div className="flex-1 min-w-0">
+                            <div className="h-1.5 w-full bg-neutral-800 rounded-full overflow-hidden">
+                              <div className="h-full bg-neutral-600 w-0" />
+                            </div>
+                            <p className="text-[11px] text-[#8696a0] font-mono mt-1.5 flex items-center justify-between">
+                              <span className="flex items-center gap-1 text-emerald-400/90 font-sans text-xs">
+                                <Music className="w-3.5 h-3.5 text-[#00a884]" />
+                                <span>Tocar para reproducir</span>
+                              </span>
+                              {m.attachment.size && <span>{formatBytes(m.attachment.size)}</span>}
+                            </p>
+                          </div>
+                        </div>
                       )}
+
+                      {/* Bottom Row: Filename */}
+                      <div className="flex items-center justify-between text-[10.5px] text-[#8696a0] font-mono px-0.5">
+                        <span className="truncate max-w-[70%]" title={m.attachment.fileName}>
+                          {m.attachment.fileName}
+                        </span>
+                        {m.attachment.size && (
+                          <span className="shrink-0 font-medium">
+                            {formatBytes(m.attachment.size)}
+                          </span>
+                        )}
+                      </div>
                     </div>
+                  );
+                })}
+
+                {audioMedia.length > visibleAudioCount && (
+                  <div className="pt-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => setVisibleAudioCount((prev) => prev + 30)}
+                      className="px-4 py-2 rounded-lg bg-[#202c33] hover:bg-[#2a3942] text-xs font-medium text-[#00a884] border border-neutral-700/60 transition cursor-pointer active:scale-95"
+                    >
+                      Cargar más audios ({audioMedia.length - visibleAudioCount} restantes)
+                    </button>
                   </div>
-                );
-              })
+                )}
+              </>
             )}
           </div>
         )}
@@ -450,48 +584,62 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
             {docMedia.length === 0 ? (
               <p className="text-center text-xs text-[#8696a0] py-8">No hay documentos en este chat.</p>
             ) : (
-              docMedia.map((m) => (
-                <div
-                  key={m.id}
-                  className="p-3 rounded-lg bg-[#202c33]/70 border border-neutral-800 flex items-center justify-between gap-2 transition"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-rose-600/20 text-rose-400 flex items-center justify-center shrink-0">
-                      <FileText className="w-4 h-4" />
+              <>
+                {docMedia.slice(0, visibleDocsCount).map((m) => (
+                  <div
+                    key={m.id}
+                    className="p-3 rounded-lg bg-[#202c33]/70 border border-neutral-800 flex items-center justify-between gap-2 transition"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-rose-600/20 text-rose-400 flex items-center justify-center shrink-0">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-[#e9edef] truncate">{getDisplayName(m.sender)}</p>
+                        <p className="text-[11px] text-[#8696a0] truncate font-mono" title={m.attachment?.fileName}>
+                          {m.attachment?.fileName}
+                        </p>
+                        <p className="text-[10px] text-[#8696a0]/80 font-mono">
+                          {formatBytes(m.attachment?.size)} · {m.rawDate} {m.rawTime}
+                        </p>
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-[#e9edef] truncate">{m.sender}</p>
-                      <p className="text-[11px] text-[#8696a0] truncate font-mono" title={m.attachment?.fileName}>
-                        {m.attachment?.fileName}
-                      </p>
-                      <p className="text-[10px] text-[#8696a0]/80 font-mono">
-                        {formatBytes(m.attachment?.size)} · {m.rawDate} {m.rawTime}
-                      </p>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => onJumpToMessage(m.id)}
+                        title="Ver este documento en la conversación"
+                        className="px-2.5 py-1.5 rounded-lg bg-[#00a884]/20 hover:bg-[#00a884]/30 text-emerald-400 text-xs font-semibold flex items-center gap-1 transition cursor-pointer active:scale-95 touch-manipulation min-h-[36px]"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Ver en el chat</span>
+                      </button>
+                      <a
+                        href={m.attachment?.url}
+                        download={m.attachment?.fileName}
+                        className="p-2 text-neutral-300 hover:text-white rounded hover:bg-neutral-700/50 transition cursor-pointer touch-manipulation min-w-[36px] min-h-[36px] flex items-center justify-center"
+                        title="Descargar documento"
+                      >
+                        <Download className="w-4 h-4" />
+                      </a>
                     </div>
                   </div>
+                ))}
 
-                  {/* Action buttons */}
-                  <div className="flex items-center gap-1.5 shrink-0">
+                {docMedia.length > visibleDocsCount && (
+                  <div className="pt-2 text-center">
                     <button
                       type="button"
-                      onClick={() => onJumpToMessage(m.id)}
-                      title="Ver este documento en la conversación"
-                      className="px-2.5 py-1.5 rounded-lg bg-[#00a884]/20 hover:bg-[#00a884]/30 text-emerald-400 text-xs font-semibold flex items-center gap-1 transition cursor-pointer active:scale-95 touch-manipulation min-h-[36px]"
+                      onClick={() => setVisibleDocsCount((prev) => prev + 30)}
+                      className="px-4 py-2 rounded-lg bg-[#202c33] hover:bg-[#2a3942] text-xs font-medium text-[#00a884] border border-neutral-700/60 transition cursor-pointer active:scale-95"
                     >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Ver en el chat</span>
+                      Cargar más documentos ({docMedia.length - visibleDocsCount} restantes)
                     </button>
-                    <a
-                      href={m.attachment?.url}
-                      download={m.attachment?.fileName}
-                      className="p-2 text-neutral-300 hover:text-white rounded hover:bg-neutral-700/50 transition cursor-pointer touch-manipulation min-w-[36px] min-h-[36px] flex items-center justify-center"
-                      title="Descargar documento"
-                    >
-                      <Download className="w-4 h-4" />
-                    </a>
                   </div>
-                </div>
-              ))
+                )}
+              </>
             )}
           </div>
         )}
@@ -509,7 +657,7 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
               </div>
             ) : (
               starredMessages.map((m) => {
-                const senderName = formatParticipantName(m.sender);
+                const senderName = getDisplayName(m.sender);
                 return (
                   <div
                     key={m.id}
@@ -532,6 +680,7 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
                             <img
                               src={m.attachment.url}
                               alt="Foto"
+                              loading="lazy"
                               className="w-12 h-12 rounded object-cover border border-white/10 shrink-0"
                             />
                           )}
@@ -539,6 +688,7 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
                             <img
                               src={m.attachment.url}
                               alt="Sticker"
+                              loading="lazy"
                               className="w-10 h-10 object-contain shrink-0"
                             />
                           )}
@@ -601,7 +751,7 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
               </div>
             ) : (
               pinnedMessages.map((m) => {
-                const senderName = formatParticipantName(m.sender);
+                const senderName = getDisplayName(m.sender);
                 return (
                   <div
                     key={m.id}
@@ -624,6 +774,7 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
                             <img
                               src={m.attachment.url}
                               alt="Foto"
+                              loading="lazy"
                               className="w-12 h-12 rounded object-cover border border-white/10 shrink-0"
                             />
                           )}
@@ -631,6 +782,7 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
                             <img
                               src={m.attachment.url}
                               alt="Sticker"
+                              loading="lazy"
                               className="w-10 h-10 object-contain shrink-0"
                             />
                           )}

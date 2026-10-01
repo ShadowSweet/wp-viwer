@@ -30,11 +30,16 @@ import {
   isMessageOutgoing,
   formatParticipantName,
 } from './utils/participantUtils';
+import {
+  DeviceType,
+  getDeviceType,
+  shouldShowTwoColumns,
+} from './utils/deviceDetector';
 
 const DEFAULT_SIDEBAR_WIDTH = 380;
-const MIN_SIDEBAR_WIDTH = 280;
+const MIN_SIDEBAR_WIDTH = 260;
 const MAX_SIDEBAR_WIDTH = 600;
-const MIN_CHAT_WIDTH = 360;
+const MIN_CHAT_WIDTH = 300;
 
 export default function App() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -84,7 +89,7 @@ export default function App() {
       const saved = localStorage.getItem('whatsapp_viewer_sidebar_width');
       if (saved) {
         const val = parseFloat(saved);
-        if (!isNaN(val) && val >= MIN_SIDEBAR_WIDTH && val <= MAX_SIDEBAR_WIDTH) {
+        if (!isNaN(val) && val >= 200 && val <= MAX_SIDEBAR_WIDTH) {
           return val;
         }
       }
@@ -94,9 +99,15 @@ export default function App() {
     return DEFAULT_SIDEBAR_WIDTH;
   })());
 
-  const [isDesktop, setIsDesktop] = useState(
-    () => typeof window !== 'undefined' && window.innerWidth >= 1024
-  );
+  // Device detection & responsive layout state:
+  // Desktop/PC keeps two columns (Chats | Conversation) even when window is narrow!
+  const [deviceType, setDeviceType] = useState<DeviceType>(() => getDeviceType());
+  const [showTwoColumns, setShowTwoColumns] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return shouldShowTwoColumns(getDeviceType(), window.innerWidth);
+    }
+    return true;
+  });
 
   // Sync initial CSS variable on root container on mount
   useEffect(() => {
@@ -108,18 +119,23 @@ export default function App() {
     }
   }, []);
 
-  // Sync isDesktop state and clamp width when window is resized
+  // Sync device type and two-column layout on resize & orientation change
   useEffect(() => {
     const handleResize = () => {
-      const desktop = window.innerWidth >= 1024;
-      setIsDesktop(desktop);
-      if (desktop && appContainerRef.current) {
+      const dev = getDeviceType();
+      setDeviceType(dev);
+      const twoCols = shouldShowTwoColumns(dev, window.innerWidth);
+      setShowTwoColumns(twoCols);
+
+      if (twoCols && appContainerRef.current) {
+        const minSidebar = dev === 'desktop' && window.innerWidth < 700 ? 200 : MIN_SIDEBAR_WIDTH;
+        const minChat = dev === 'desktop' && window.innerWidth < 700 ? 220 : MIN_CHAT_WIDTH;
         const maxAllowed = Math.max(
-          MIN_SIDEBAR_WIDTH,
-          Math.min(MAX_SIDEBAR_WIDTH, window.innerWidth - MIN_CHAT_WIDTH)
+          minSidebar,
+          Math.min(MAX_SIDEBAR_WIDTH, window.innerWidth - minChat)
         );
         const clamped = Math.max(
-          MIN_SIDEBAR_WIDTH,
+          minSidebar,
           Math.min(maxAllowed, sidebarWidthRef.current)
         );
         sidebarWidthRef.current = clamped;
@@ -127,7 +143,11 @@ export default function App() {
       }
     };
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
+    };
   }, []);
 
   // Resizing drag interaction - ZERO React re-renders, rAF-throttled CSS variable updates
@@ -150,11 +170,14 @@ export default function App() {
 
     const applyWidth = () => {
       if (appContainerRef.current) {
+        const dev = getDeviceType();
+        const minSidebar = dev === 'desktop' && window.innerWidth < 700 ? 200 : MIN_SIDEBAR_WIDTH;
+        const minChat = dev === 'desktop' && window.innerWidth < 700 ? 220 : MIN_CHAT_WIDTH;
         const maxAllowed = Math.max(
-          MIN_SIDEBAR_WIDTH,
-          Math.min(MAX_SIDEBAR_WIDTH, window.innerWidth - MIN_CHAT_WIDTH)
+          minSidebar,
+          Math.min(MAX_SIDEBAR_WIDTH, window.innerWidth - minChat)
         );
-        const clamped = Math.max(MIN_SIDEBAR_WIDTH, Math.min(maxAllowed, latestX));
+        const clamped = Math.max(minSidebar, Math.min(maxAllowed, latestX));
         sidebarWidthRef.current = clamped;
         appContainerRef.current.style.setProperty('--sidebar-width', `${clamped}px`);
       }
@@ -304,7 +327,8 @@ export default function App() {
 
     const isLuisjaChat = hasLuisjaParticipant(
       activeSession.metadata.participants,
-      activeSession.messages
+      activeSession.messages,
+      activeSession.customTitle || activeSession.title
     );
 
     return activeSession.messages.map((m) => {
@@ -797,13 +821,17 @@ export default function App() {
       {/* LEFT COLUMN: Sidebar Chat List */}
       <div
         style={{
-          width: isDesktop ? 'var(--sidebar-width)' : undefined,
-          minWidth: isDesktop ? 'var(--sidebar-width)' : undefined,
-          maxWidth: isDesktop ? 'var(--sidebar-width)' : undefined,
+          width: showTwoColumns ? 'var(--sidebar-width)' : undefined,
+          minWidth: showTwoColumns ? 'var(--sidebar-width)' : undefined,
+          maxWidth: showTwoColumns ? 'var(--sidebar-width)' : undefined,
         }}
         className={`${
-          activeSessionId ? 'hidden lg:flex' : 'flex'
-        } w-full shrink-0 flex-col h-full bg-[#111b21] z-20`}
+          showTwoColumns
+            ? 'flex'
+            : activeSessionId
+            ? 'hidden'
+            : 'flex w-full'
+        } shrink-0 flex-col h-full bg-[#111b21] z-20`}
       >
         <ChatSidebar
           sessions={sessions}
@@ -818,6 +846,7 @@ export default function App() {
 
       {/* INTERACTIVE RESIZER DIVIDER (Visible on desktop & tablet landscape) */}
       <PanelResizer
+        visible={showTwoColumns}
         onMouseDown={handleStartResize}
         onDoubleClick={handleResetSidebarWidth}
       />
@@ -825,8 +854,12 @@ export default function App() {
       {/* RIGHT COLUMN: Active Chat Conversation or Empty Welcome State */}
       <main
         className={`${
-          activeSessionId ? 'flex' : 'hidden lg:flex'
-        } flex-1 flex-col h-full relative overflow-hidden bg-[#0b141a] z-10 w-full min-w-0`}
+          showTwoColumns
+            ? 'flex flex-1'
+            : activeSessionId
+            ? 'flex w-full flex-1'
+            : 'hidden'
+        } flex-col h-full relative overflow-hidden bg-[#0b141a] z-10 min-w-0`}
       >
         {activeSession ? (
           <>
@@ -835,6 +868,7 @@ export default function App() {
               metadata={activeSession.metadata}
               displayTitle={activeSession.customTitle || activeSession.title}
               currentUser={activeSession.currentUser}
+              showBackButton={!showTwoColumns}
               onChangeCurrentUser={handleChangeCurrentUser}
               onToggleSearch={() => setIsSearchOpen(!isSearchOpen)}
               isSearchOpen={isSearchOpen}

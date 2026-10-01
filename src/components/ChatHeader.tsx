@@ -15,6 +15,7 @@ interface ChatHeaderProps {
   metadata: ChatMetadata;
   displayTitle?: string;
   currentUser: string;
+  showBackButton?: boolean;
   onChangeCurrentUser: (user: string) => void;
   onToggleSearch: () => void;
   isSearchOpen: boolean;
@@ -28,6 +29,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
   metadata,
   displayTitle,
   currentUser,
+  showBackButton = false,
   onChangeCurrentUser,
   onToggleSearch,
   isSearchOpen,
@@ -52,16 +54,18 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
     <header className="h-14 sm:h-15 bg-[#111b21] border-b border-neutral-800 flex items-center justify-between px-2 sm:px-4 z-20 select-none shrink-0 shadow-xs">
       {/* Contact / Group Info */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1 mr-1">
-        {/* Back to sidebar button (prominent on mobile / portrait tablet) */}
-        <button
-          type="button"
-          onClick={onBackToSidebar}
-          title="Volver a la lista de chats"
-          aria-label="Volver a la lista de chats"
-          className="lg:hidden p-2 -ml-1 rounded-full text-emerald-400 hover:text-emerald-300 hover:bg-[#202c33] active:scale-95 transition min-w-[42px] min-h-[42px] flex items-center justify-center shrink-0 touch-manipulation cursor-pointer"
-        >
-          <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
-        </button>
+        {/* Back to sidebar button (visible only in single-column mode: phones or portrait tablets) */}
+        {showBackButton && (
+          <button
+            type="button"
+            onClick={onBackToSidebar}
+            title="Volver a la lista de chats"
+            aria-label="Volver a la lista de chats"
+            className="p-2 -ml-1 rounded-full text-emerald-400 hover:text-emerald-300 hover:bg-[#202c33] active:scale-95 transition min-w-[42px] min-h-[42px] flex items-center justify-center shrink-0 touch-manipulation cursor-pointer"
+          >
+            <ArrowLeft className="w-5 h-5 stroke-[2.5]" />
+          </button>
+        )}
 
         {/* Avatar */}
         <div

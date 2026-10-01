@@ -151,12 +151,17 @@ export function extractAttachmentInfo(content: string): {
 } {
   const cleaned = cleanText(content);
 
-  // Check view-once photo specifically (e.g. <imagen omitida> or imagen omitida -> Foto para ver una sola vez)
+  // Check view-once photo or video specifically
   if (
-    /^<?(?:imagen omitida|image omitted|Foto para ver una sola vez|foto de una sola vez)>?$/i.test(cleaned) ||
-    /^(?:Foto|Video) para ver una sola vez$/i.test(cleaned)
+    /^<?(?:imagen omitida|image omitted|Foto para ver una sola vez|foto de una sola vez)>?$/i.test(cleaned)
   ) {
     return { isViewOnce: true, caption: 'Foto para ver una sola vez' };
+  }
+
+  if (
+    /^<?(?:Video para ver una sola vez|video de una sola vez)>?$/i.test(cleaned)
+  ) {
+    return { isViewOnce: true, caption: 'Video para ver una sola vez' };
   }
 
   // Check omitted media placeholder

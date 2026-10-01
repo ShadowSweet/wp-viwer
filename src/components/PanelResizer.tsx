@@ -2,14 +2,18 @@ import React from 'react';
 
 interface PanelResizerProps {
   isDragging?: boolean;
+  visible?: boolean;
   onMouseDown: (e: React.MouseEvent | React.PointerEvent) => void;
   onDoubleClick?: () => void;
 }
 
 export const PanelResizer: React.FC<PanelResizerProps> = React.memo(({
+  visible = true,
   onMouseDown,
   onDoubleClick,
 }) => {
+  if (!visible) return null;
+
   return (
     <div
       role="separator"
@@ -20,7 +24,7 @@ export const PanelResizer: React.FC<PanelResizerProps> = React.memo(({
       onPointerDown={onMouseDown}
       onMouseDown={onMouseDown}
       onDoubleClick={onDoubleClick}
-      className="hidden lg:flex relative w-1.5 shrink-0 z-30 cursor-col-resize items-center justify-center select-none group transition-colors touch-none bg-[#1e2a30] hover:bg-[#00a884]/80 active:bg-[#00a884] [[data-resizing=true]_&]:bg-[#00a884] [[data-resizing=true]_&]:shadow-[0_0_8px_rgba(0,168,132,0.6)]"
+      className="flex relative w-1.5 shrink-0 z-30 cursor-col-resize items-center justify-center select-none group transition-colors touch-none bg-[#1e2a30] hover:bg-[#00a884]/80 active:bg-[#00a884] [[data-resizing=true]_&]:bg-[#00a884] [[data-resizing=true]_&]:shadow-[0_0_8px_rgba(0,168,132,0.6)]"
     >
       {/* Invisible expanded hit area for effortless clicking and grabbing */}
       <div className="absolute inset-y-0 -left-2 -right-2 z-40 cursor-col-resize" />

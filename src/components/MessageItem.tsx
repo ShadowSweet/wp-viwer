@@ -103,8 +103,20 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
     return () => window.removeEventListener('click', handleOutsideClick);
   }, [showMenu]);
 
-  // View-once photo detection (Foto para ver una sola vez)
-  const isViewOnce = message.isViewOnce || message.text === 'Foto para ver una sola vez';
+  // View-once photo or video detection
+  const isViewOncePhoto =
+    (message.isViewOnce && (!message.attachment || message.attachment.mediaType === 'image')) ||
+    message.text === 'Foto para ver una sola vez' ||
+    message.text?.toLowerCase() === 'imagen omitida';
+
+  const isViewOnceVideo =
+    (message.isViewOnce && message.attachment?.mediaType === 'video') ||
+    message.text === 'Video para ver una sola vez' ||
+    message.text === '🎥 Video para ver una sola vez' ||
+    message.text?.toLowerCase() === 'video note omitted' ||
+    message.text?.toLowerCase() === '<video note omitted>';
+
+  const isViewOnce = isViewOncePhoto || isViewOnceVideo;
 
   // Resilient sticker detection (mediaType === 'sticker' or filename has 'sticker', 'stk-', or is webp)
   const isSticker =
@@ -120,14 +132,19 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
   const isAudioOrVoice = message.attachment?.mediaType === 'audio' || message.attachment?.mediaType === 'voice';
   const isDoc = message.attachment?.mediaType === 'document';
 
-  // System Messages
+  // System Messages: Centered, discreet, no sender, no avatar, no timestamp/menu
   if (message.isSystem) {
+    const isEncryption =
+      message.systemType === 'encryption' ||
+      message.text.toLowerCase().includes('cifrado') ||
+      message.text.toLowerCase().includes('encrypt');
+
     return (
-      <div id={message.id} className="flex justify-center my-2 px-2 sm:px-4 select-none">
-        <div className="max-w-lg rounded-lg bg-[#182229]/90 border border-neutral-700/40 px-3 py-1.5 text-center shadow-xs">
-          <div className="flex items-center justify-center gap-1.5 text-[11.5px] sm:text-[12px] text-[#ffd279] font-medium leading-relaxed">
-            {message.systemType === 'encryption' && <Lock className="w-3.5 h-3.5 shrink-0 text-[#ffd279]" />}
-            {message.systemType?.startsWith('group') && <Users className="w-3.5 h-3.5 shrink-0 text-[#ffd279]" />}
+      <div id={message.id} className="flex justify-center my-3 px-3 sm:px-6 select-none">
+        <div className="max-w-md rounded-lg bg-[#182229]/95 border border-neutral-700/50 px-3.5 py-2 text-center shadow-xs">
+          <div className="flex flex-col items-center justify-center gap-1 text-[11.5px] sm:text-[12px] text-[#ffd279] font-normal leading-relaxed">
+            {isEncryption && <Lock className="w-3.5 h-3.5 text-[#ffd279] shrink-0 mb-0.5" />}
+            {message.systemType?.startsWith('group') && <Users className="w-3.5 h-3.5 text-[#ffd279] shrink-0 mb-0.5" />}
             <span>{renderFormattedText(message.text, searchQuery)}</span>
           </div>
         </div>
@@ -185,12 +202,12 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
             )}
 
             <div className="flex items-center gap-2.5 py-0.5 pr-14 select-none">
-              {/* View-once Icon (Circle 1) */}
+              {/* View-once Icon (Circle 1 or Video) */}
               <div className="w-6 h-6 rounded-full border border-dashed border-[#53bdeb] text-[#53bdeb] flex items-center justify-center text-xs font-bold shrink-0">
-                1
+                {isViewOnceVideo ? '🎥' : '1'}
               </div>
               <span className="text-[13.5px] font-medium text-[#e9edef] flex items-center gap-1.5">
-                <span>Foto para ver una sola vez</span>
+                <span>{isViewOnceVideo ? 'Video para ver una sola vez' : 'Foto para ver una sola vez'}</span>
               </span>
             </div>
 
@@ -647,8 +664,28 @@ export const MessageItem: React.FC<MessageItemProps> = React.memo(({
             </div>
           )}
 
+          {/* View-once photo badge */}
+          {isViewOncePhoto && !hasAttachment && (
+            <div className="flex items-center gap-2 py-0.5 pr-8 select-none text-[#e9edef]">
+              <div className="w-6 h-6 rounded-full border border-dashed border-[#00a884] flex items-center justify-center text-[#00a884] text-[11.5px] font-bold shrink-0">
+                1
+              </div>
+              <span className="font-medium italic text-[13.5px]">Foto para ver una sola vez</span>
+            </div>
+          )}
+
+          {/* View-once video badge */}
+          {isViewOnceVideo && !hasAttachment && (
+            <div className="flex items-center gap-2 py-0.5 pr-8 select-none text-[#e9edef]">
+              <div className="w-6 h-6 rounded-full border border-dashed border-[#00a884] flex items-center justify-center text-[#00a884] text-[11px] font-bold shrink-0">
+                🎥
+              </div>
+              <span className="font-medium italic text-[13.5px]">Video para ver una sola vez</span>
+            </div>
+          )}
+
           {/* Message Text with normal formatted links */}
-          {message.text && (
+          {message.text && !isViewOncePhoto && !isViewOnceVideo && (
             <div className="text-[13.8px] sm:text-[14.2px] break-words whitespace-pre-wrap select-text pr-12 overflow-hidden">
               {renderFormattedText(message.text, searchQuery)}
             </div>
