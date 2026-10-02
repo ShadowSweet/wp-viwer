@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   X,
   Users,
@@ -20,6 +20,7 @@ import {
 import { Attachment, ChatMetadata, Message } from '../types/chat';
 import { formatBytes } from '../utils/dateUtils';
 import { getDisplayName } from '../utils/participantUtils';
+import { sortMessagesChronologically } from '../utils/messageOrderUtils';
 import { AudioPlayer } from './AudioPlayer';
 
 interface ChatInfoDrawerProps {
@@ -76,7 +77,7 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
     setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4);
   }, []);
 
-  // Stop playback when drawer closes or when active tab changes
+  // Stop playback when drawer closes or unmounts
   useEffect(() => {
     if (!isOpen) {
       setActivePlayingAudioId(null);
@@ -106,30 +107,55 @@ export const ChatInfoDrawer: React.FC<ChatInfoDrawerProps> = ({
     }
   }, [activeTab, isOpen, checkTabsOverflow]);
 
-  if (!isOpen) return null;
-
   // Extract all media items from messages, preserving reference to the original message
-  const mediaItems = messages.filter((m) => !!m.attachment);
-  const visualMedia = mediaItems.filter(
-    (m) =>
-      m.attachment?.mediaType === 'image' ||
-      m.attachment?.mediaType === 'video' ||
-      m.attachment?.mediaType === 'gif'
+  const mediaItems = useMemo(() => messages.filter((m) => !!m.attachment), [messages]);
+
+  const visualMedia = useMemo(
+    () =>
+      mediaItems.filter(
+        (m) =>
+          m.attachment?.mediaType === 'image' ||
+          m.attachment?.mediaType === 'video' ||
+          m.attachment?.mediaType === 'gif'
+      ),
+    [mediaItems]
   );
-  const audioMedia = mediaItems.filter(
-    (m) => m.attachment?.mediaType === 'audio' || m.attachment?.mediaType === 'voice'
+
+  const audioMedia = useMemo(
+    () =>
+      mediaItems.filter(
+        (m) => m.attachment?.mediaType === 'audio' || m.attachment?.mediaType === 'voice'
+      ),
+    [mediaItems]
   );
-  const docMedia = mediaItems.filter((m) => m.attachment?.mediaType === 'document');
-  const starredMessages = messages.filter((m) => m.isStarred);
-  const pinnedMessages = messages.filter((m) => m.isPinned);
+
+  const docMedia = useMemo(
+    () => mediaItems.filter((m) => m.attachment?.mediaType === 'document'),
+    [mediaItems]
+  );
+
+  // Chronologically sorted starred & pinned messages (strictly oldest to newest by original chat date/time)
+  const starredMessages = useMemo(() => {
+    const list = messages.filter((m) => m.isStarred);
+    return sortMessagesChronologically(list, messages);
+  }, [messages]);
+
+  const pinnedMessages = useMemo(() => {
+    const list = messages.filter((m) => m.isPinned);
+    return sortMessagesChronologically(list, messages);
+  }, [messages]);
 
   // Compute message counts per participant using central getDisplayName
-  const participantStats = metadata.participants
-    .map((name) => {
-      const count = messages.filter((m) => !m.isSystem && m.sender === name).length;
-      return { name, displayName: getDisplayName(name), count };
-    })
-    .sort((a, b) => b.count - a.count);
+  const participantStats = useMemo(() => {
+    return metadata.participants
+      .map((name) => {
+        const count = messages.filter((m) => !m.isSystem && m.sender === name).length;
+        return { name, displayName: getDisplayName(name), count };
+      })
+      .sort((a, b) => b.count - a.count);
+  }, [metadata.participants, messages]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-y-0 right-0 z-40 w-full sm:w-[420px] bg-[#111b21] border-l border-neutral-800 shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 select-none overflow-hidden pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)]">

@@ -30,6 +30,7 @@ import {
   isMessageOutgoing,
   formatParticipantName,
 } from './utils/participantUtils';
+import { sortMessagesChronologically } from './utils/messageOrderUtils';
 import {
   DeviceType,
   getDeviceType,
@@ -349,7 +350,8 @@ export default function App() {
   }, [activeSession, starredSet, pinnedSet]);
 
   const pinnedMessages = useMemo(() => {
-    return adjustedMessages.filter((m) => m.isPinned);
+    const list = adjustedMessages.filter((m) => m.isPinned);
+    return sortMessagesChronologically(list, adjustedMessages);
   }, [adjustedMessages]);
 
   // Consecutive audio autoplay handler (strictly chronological in real conversation)
@@ -1020,22 +1022,24 @@ export default function App() {
             />
 
             {/* Side Drawer: Chat Info & Multimedia Gallery */}
-            <ChatInfoDrawer
-              metadata={activeSession.metadata}
-              messages={adjustedMessages}
-              isOpen={isInfoOpen}
-              onClose={() => setIsInfoOpen(false)}
-              onSelectMedia={(attachment, caption, sender, dateStr, messageId) => {
-                setActiveMedia({ attachment, caption, sender, dateStr, messageId });
-              }}
-              onJumpToMessage={(msgId) => {
-                goToMessage(msgId, activeSession.id);
-              }}
-              onToggleStar={handleToggleStar}
-              onTogglePin={handleTogglePin}
-              audioPlaybackRate={audioPlaybackRate}
-              onChangeAudioRate={handleChangeAudioRate}
-            />
+            {isInfoOpen && (
+              <ChatInfoDrawer
+                metadata={activeSession.metadata}
+                messages={adjustedMessages}
+                isOpen={isInfoOpen}
+                onClose={() => setIsInfoOpen(false)}
+                onSelectMedia={(attachment, caption, sender, dateStr, messageId) => {
+                  setActiveMedia({ attachment, caption, sender, dateStr, messageId });
+                }}
+                onJumpToMessage={(msgId) => {
+                  goToMessage(msgId, activeSession.id);
+                }}
+                onToggleStar={handleToggleStar}
+                onTogglePin={handleTogglePin}
+                audioPlaybackRate={audioPlaybackRate}
+                onChangeAudioRate={handleChangeAudioRate}
+              />
+            )}
           </>
         ) : (
           /* Empty Chat Welcome State (when no chat is selected) */
